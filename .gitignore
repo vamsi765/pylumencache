@@ -1,0 +1,93 @@
+# ---------------------------------------------------------------------
+# Secrets and credentials (never commit these)
+# ---------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+secrets.yaml
+*.pem
+*.key
+*.crt
+*.p12
+passwd
+mosquitto_passwd
+
+# ---------------------------------------------------------------------
+# Raw protocol captures
+# Raw captures can contain MACs, names and credentials-adjacent data.
+# Only redacted, reviewed files belong in fixtures/ (which IS committed).
+# ---------------------------------------------------------------------
+capture*.jsonl
+captures/
+*.capture
+*.pcap
+
+# ---------------------------------------------------------------------
+# Python (pylumencache, integration, tools)
+# ---------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.python-version
+
+# Test, lint and type-check caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# ---------------------------------------------------------------------
+# Home Assistant development instance (devcontainer / docker)
+# ---------------------------------------------------------------------
+/config/*
+!/config/configuration.yaml
+home-assistant.log*
+home-assistant_v2.db*
+.storage/
+.cloud/
+.HA_VERSION
+OZW_Log.txt
+
+# ---------------------------------------------------------------------
+# Lovelace card (TypeScript + Lit)
+# The final built bundle is committed under
+# custom_components/lumencache/www/ (HACS needs it); intermediate
+# build output and tooling are not.
+# ---------------------------------------------------------------------
+node_modules/
+card/dist/
+card/.vite/
+card/coverage/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Browser tests (Playwright)
+test-results/
+playwright-report/
+playwright/.cache/
+
+# ---------------------------------------------------------------------
+# Editors, OS and misc
+# ---------------------------------------------------------------------
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+*.log
+
