@@ -91,13 +91,14 @@ To add another ReNetA system, repeat step 1. Each system keeps its own options.
 | Service | Purpose |
 |---|---|
 | `lumencache.set_light` | Precise brightness (0.1% steps), color temperature and fade, for lights or zones |
-| `lumencache.add_to_zone`, `remove_from_zone`, `list_zone_members` | Zone membership |
-| `lumencache.hail` | List devices that are not yet commissioned |
+| `lumencache.add_to_zone`, `remove_from_zone`, `list_device_zones` | Zone membership: add (with optional zone defaults), remove, and list a device's zones |
+| `lumencache.hail` | Look up what is at a GID (the default, GID 0, lists devices not yet commissioned) |
+| `lumencache.query_device` | Ask a device to ping, send its heartbeat, report its status, or dump its configuration |
 | `lumencache.assign_gid` | Commission a device (optionally persist) |
 | `lumencache.set_drive_current` | Set drive current and defaults (optionally persist) |
 | `lumencache.set_socket_mode` | Change a socket card's operating mode |
-| `lumencache.reboot` | Reboot the system |
-| `lumencache.factory_reset` | Factory reset, behind safeguards |
+| `lumencache.reboot` | Reboot a device (by GID) |
+| `lumencache.factory_reset` | Factory reset a device (by GID), behind safeguards |
 | `lumencache.send_raw` | Send any ReNetA command, as a fallback |
 
 System-level services take an optional `system` field. With one system it is filled in automatically; with several it is required.
@@ -128,7 +129,7 @@ Each fixture and zone belongs to exactly one ReNetA system, and systems are full
 ## Safety
 
 - Commands that persist to the system (`store`) are **off by default** and must be requested explicitly.
-- **Factory reset** is available but deliberately hard to reach: the service is admin-only and needs a confirm flag plus the exact system name; its button entity is in the configuration category and disabled by default; and the card's system panel shows it in a collapsed "Danger zone" with a red button and a typed-name confirmation.
+- **Factory reset** is available but deliberately hard to reach: the service is admin-only and needs a confirm flag plus the exact device (its GID and name), because the command acts on one device; its button entity is in the configuration category and disabled by default; and the card's device panel shows it in a collapsed "Danger zone" with a red button and a typed-name confirmation.
 - Credentials are stored only in the Home Assistant config entry, never in logs or diagnostics.
 - TLS verification is on by default.
 
@@ -159,17 +160,22 @@ ha-lumencache/
 
 The protocol is documented from real traffic, in `docs/protocol.md`. The library's CLI includes a capture command (`lumencache capture`, *planned*) that records everything the system publishes, read-only by default, and a diff command that compares a new capture with the stored fixtures. After a firmware or backend update, re-capture, diff, and refresh the spec and fixtures.
 
-Until the CLI exists, `tools/lumencache_capture.py` does the same job:
+Until the CLI exists, `tools/lumencache_capture.py` does the same job, and can also send commands by hand:
 
 ```bash
+# one-time setup: create a virtual environment and install the dependency
+python3 -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install paho-mqtt
+
 export LC_HOST=<host> LC_USER=<user> LC_PASS=<pass> LC_TOPIC_PREFIX='<Prefix Topic>'
-python3 tools/lumencache_capture.py --hail
+python3 tools/lumencache_capture.py --hail         # record for 2 minutes
+python3 tools/lumencache_capture.py --interactive  # type commands, see replies live
 ```
 
 While it runs, press a wall switch and change a light from the PowerPlane display, so `status` and `events` messages appear in the capture.
 
-**What it does.** It connects to the broker over TLS (MQTT 5, port 8883), subscribes to everything under your Prefix Topic (`<prefix>/#`), and writes every message to `capture.jsonl`. It is read-only: the only thing it can send is one optional hail (`{"e":9,"g":0}`, which lists uncommissioned devices) to `<prefix>/cmd` when you pass `--hail`. It never sends control, commissioning, reboot or reset commands.
+**What it does.** It connects to the broker over TLS (MQTT 5, port 8883), subscribes to everything under your Prefix Topic (`<prefix>/#`), and writes every message to `capture.jsonl`. By default it is read-only: the only thing it can send is one optional hail (`{"e":9,"g":0}`, which lists uncommissioned devices) to `<prefix>/cmd` when you pass `--hail`. With `--interactive` it also sends what you type (see below), so it can change your lights and settings.
 
 **Options**
 
@@ -178,11 +184,14 @@ While it runs, press a wall switch and change a light from the PowerPlane displa
 | `--host`, `--port`, `--user`, `--password` | Connection details. Defaults come from `LC_HOST`, `LC_PORT` (8883), `LC_USER`, `LC_PASS`; prefer the environment variables so the password stays out of shell history |
 | `--topic-prefix P` | The Prefix Topic from your LumenCache connection details (env `LC_TOPIC_PREFIX`). Required. Quote it in the shell |
 | `--topic T` | Subscribe to `T` (relative to the prefix) instead of `<prefix>/#`; repeat for several. `+` matches one level, `#` matches everything below |
+| `-i`, `--interactive` | Type JSON commands to send to `<prefix>/cmd`; ends at `--duration` or when you quit |
 | `--hail` | Send the one read-only hail described above |
-| `--duration N` | Seconds to record (default 120) |
+| `--duration N` | Seconds to run, interactive mode included (default 120). `0` runs until you stop it (Ctrl-C, or `quit` in interactive mode) |
 | `--out FILE` | Output file (default `capture.jsonl`) |
 
-**Output.** `capture.jsonl` has one JSON object per message with the timestamp, topic, retained flag, and the payload (parsed as JSON when possible). Topics are written with the prefix removed, so the file does not contain your identifier and the protocol spec and fixtures do not depend on one system's prefix. Credentials are never written. Still review a capture for personal details before sharing it.
+**Interactive mode.** After it connects, type one JSON command per line and press Enter, for example `{"e":8,"g":2}`. Each line is published to `<prefix>/cmd` exactly as typed; lines that are not a JSON object are refused and nothing is sent. Messages from the system print as they arrive, each with a time, and are also written to the capture file. Because the script subscribes to the whole prefix, your own commands come back from the broker as `cmd` messages, which confirms they were published. Type `quit` or press Ctrl-C to exit. The only guard is on factory reset (`e:15` with `c:1`): it asks you to type `RESET` first. Everything else, including commands that persist settings, is sent as typed.
+
+**Output.** `capture.jsonl` has one JSON object per message with the timestamp, direction (`recv` for messages from the broker, `sent` for commands this script published), topic, retained flag, and the payload (parsed as JSON when possible). Topics are written with the prefix removed, so the file does not contain your identifier and the protocol spec and fixtures do not depend on one system's prefix. Credentials are never written. Still review a capture for personal details before sharing it.
 
 **Troubleshooting**
 
