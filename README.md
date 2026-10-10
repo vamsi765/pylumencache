@@ -69,7 +69,7 @@ The card is served by the integration itself, so there is no separate card insta
 
 Setup is done in the UI:
 
-1. Enter the system's host, port (default `8883`), username and password, and choose the TLS option (verify, custom CA, or skip verification for a self-signed certificate).
+1. Enter the system's host, port (default `8883`), username, password and **Prefix Topic** (the value LumenCache gives you, a topic path such as `platform:na/.../<id>`), and choose the TLS option (certificate verification is on by default).
 2. The integration connects, reads the system's device list and creates the entities.
 3. Optionally, use the integration's options to rename fixtures, assign areas, set color temperature ranges, and set the default fade time.
 
@@ -163,13 +163,32 @@ Until the CLI exists, `tools/lumencache_capture.py` does the same job:
 
 ```bash
 pip install paho-mqtt
-export LC_HOST=... LC_USER=... LC_PASS=...
-python3 tools/lumencache_capture.py --duration 180 --hail
-# choose topics explicitly (repeatable):
-python3 tools/lumencache_capture.py --topic status --topic meta --topic events
+export LC_HOST=<host> LC_USER=<user> LC_PASS=<pass> LC_TOPIC_PREFIX='<Prefix Topic>'
+python3 tools/lumencache_capture.py --hail
 ```
 
-It writes `capture.jsonl` and never stores credentials. Review captures for personal details before sharing them.
+While it runs, press a wall switch and change a light from the PowerPlane display, so `status` and `events` messages appear in the capture.
+
+**What it does.** It connects to the broker over TLS (MQTT 5, port 8883), subscribes to everything under your Prefix Topic (`<prefix>/#`), and writes every message to `capture.jsonl`. It is read-only: the only thing it can send is one optional hail (`{"e":9,"g":0}`, which lists uncommissioned devices) to `<prefix>/cmd` when you pass `--hail`. It never sends control, commissioning, reboot or reset commands.
+
+**Options**
+
+| Option | Meaning |
+|---|---|
+| `--host`, `--port`, `--user`, `--password` | Connection details. Defaults come from `LC_HOST`, `LC_PORT` (8883), `LC_USER`, `LC_PASS`; prefer the environment variables so the password stays out of shell history |
+| `--topic-prefix P` | The Prefix Topic from your LumenCache connection details (env `LC_TOPIC_PREFIX`). Required. Quote it in the shell |
+| `--topic T` | Subscribe to `T` (relative to the prefix) instead of `<prefix>/#`; repeat for several. `+` matches one level, `#` matches everything below |
+| `--hail` | Send the one read-only hail described above |
+| `--duration N` | Seconds to record (default 120) |
+| `--out FILE` | Output file (default `capture.jsonl`) |
+
+**Output.** `capture.jsonl` has one JSON object per message with the timestamp, topic, retained flag, and the payload (parsed as JSON when possible). Topics are written with the prefix removed, so the file does not contain your identifier and the protocol spec and fixtures do not depend on one system's prefix. Credentials are never written. Still review a capture for personal details before sharing it.
+
+**Troubleshooting**
+
+- *A subscription is refused:* the script prints the broker's reason. Check that `--topic-prefix` matches your Prefix Topic exactly, or use `--topic` for a topic you know you may read.
+- *Cannot connect:* check host, port, username and password.
+- *No messages arrive:* trigger activity while it runs (press a switch), and check the prefix.
 
 ## Roadmap
 
