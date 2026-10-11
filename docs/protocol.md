@@ -333,7 +333,7 @@ After a reboot, relative to the reboot (approximate; the restart time is derived
 
 ## 8. Open questions
 
-IDs refer to the register in the implementation plan.
+IDs are the maintainer's own numbering for open protocol questions.
 
 | ID | Question | Status |
 |---|---|---|

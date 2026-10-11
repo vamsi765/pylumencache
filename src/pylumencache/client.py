@@ -132,7 +132,11 @@ class LumenCacheClient:
                     attempt = 0
                     self._set_connected(True)
                     async for raw in client.messages:
-                        self._dispatch(str(raw.topic), raw.payload)
+                        payload = raw.payload
+                        if isinstance(payload, bytearray):
+                            payload = bytes(payload)
+                        if isinstance(payload, (bytes, str)):   # the broker can also send an empty or numeric payload
+                            self._dispatch(str(raw.topic), payload)
                 _LOGGER.warning("Connection to %s:%s closed by the broker", self._host, self._port)
             except asyncio.CancelledError:
                 raise
