@@ -52,14 +52,14 @@ class LumenCacheClient:
         password: str | None = None,
         verify_tls: bool = True,
         reconnect_delays: tuple[float, ...] = RECONNECT_DELAYS,
-        client_factory: Callable[[], aiomqtt.Client] | None = None,
+        client_factory: Callable[[], Any] | None = None,   # builds a connection like aiomqtt.Client; for tests
     ) -> None:
         self._prefix = prefix.rstrip("/")
         self._host, self._port, self._username, self._password = host, port, username, password
         self._verify_tls = verify_tls
         self._delays = reconnect_delays
         self._factory = client_factory or self._default_factory
-        self._client: aiomqtt.Client | None = None
+        self._client: Any = None
         self._task: asyncio.Task[None] | None = None
         self._connected = asyncio.Event()
         self._listeners: list[Callable[[Message], Any]] = []
