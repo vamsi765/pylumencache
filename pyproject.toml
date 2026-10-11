@@ -30,8 +30,7 @@ Issues = "https://github.com/vamsi765/pylumencache/issues"
 Integration = "https://github.com/vamsi765/ha-lumencache"
 
 [project.optional-dependencies]
-capture = ["paho-mqtt"]
-dev = ["pyyaml", "jsonschema", "paho-mqtt", "pytest", "ruff", "mypy", "types-PyYAML", "import-linter"]
+dev = ["pyyaml", "jsonschema", "pytest", "ruff", "mypy", "types-PyYAML", "import-linter"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/pylumencache"]

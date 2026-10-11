@@ -1,6 +1,6 @@
 """Make captured traffic safe to share: stable fakes for ids, blanked free text.
 
-Used by the capture tool for the files it writes and by tools/watch.py for the screen.
+Used by tools/console.py for the capture file and for the screen.
 """
 from __future__ import annotations
 

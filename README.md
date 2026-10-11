@@ -17,10 +17,9 @@ Unofficial Python library for [LumenCache](https://www.lumencache.com) ReNetA li
 | `src/pylumencache/transport.py` | The `Transport` interface: what a way of reaching a system must provide (start, stop, connection state, domain events in, domain commands out) |
 | `src/pylumencache/transports/mqtt/` | The MQTT transport. `client.py` (`MqttTransport`: TLS, reconnects, publishes to `cmd`), `adapter.py` (messages to domain events, domain commands to messages), `fake.py` (`FakeController`: a fake ReNetA system that replays a capture, for developing and testing without lights; pass `controller.factory` as `client_factory`) |
 | `src/pylumencache/transports/mqtt/wire/` | The MQTT wire format: `codes.py` (the `Code` enum), `commands.py` (one builder per documented command, such as `zone_control(zone_id=250, brightness=50)`) and `models.py` (a dataclass per received message), all generated from the YAML, and `parser.py` (`parse(topic, payload)` returns a typed message, or an `UnknownMessage` for anything unrecognised) |
-| `src/pylumencache/obfuscate.py` | `Obfuscator`: replaces ids, serials, free text and MACs with stable fakes. Used by the capture tool for its files and by `watch.py` for the screen |
-| `tools/watch.py` | Prints every parsed message, from a real system or, with `--replay FILE`, from a capture. Ids are replaced with fakes unless `--no-obfuscate` |
+| `src/pylumencache/obfuscate.py` | `Obfuscator`: replaces ids, serials, free text and MACs with stable fakes. Used by `tools/console.py` for the capture file and for the screen |
 | `tools/gen_protocol.py` | Regenerates the tables in `protocol.md` and `codes.py`, `commands.py` and `models.py`; `--check` fails when either is stale |
-| `tools/capture.py` | Records and sends MQTT traffic |
+| `tools/console.py` | Talks to a system over MQTT, in both directions: `record` writes a capture file, `watch` prints parsed messages, and `-i` lets you type commands to send. With `--replay FILE` it uses the fake system instead of a real one |
 
 ## Setup
 
@@ -80,50 +79,62 @@ async def main():
 asyncio.run(main())
 ```
 
-Model listeners are plain functions; transport listeners can also be coroutines. One that raises does not affect the others. `cache.model` holds the devices and the last known state of each zone and light. `cache.send_raw(...)` sends any MQTT command as a fallback. For the raw typed messages, use `cache.transport.add_message_listener(...)` with `wire.commands` builders. `tools/watch.py` does that from the command line.
+Model listeners are plain functions; transport listeners can also be coroutines. One that raises does not affect the others. `cache.model` holds the devices and the last known state of each zone and light. `cache.send_raw(...)` sends any MQTT command as a fallback. For the raw typed messages, use `cache.transport.add_message_listener(...)` with `wire.commands` builders. `tools/console.py` does that from the command line.
 
 ## Capturing the protocol
 
-The protocol is documented from real traffic, in `docs/protocol.md`, with the message definitions in `docs/asyncapi.yaml` (an AsyncAPI description; the code tables in the markdown are generated from it by `tools/gen_protocol.py`). `tools/capture.py` records everything the system publishes (read-only by default) and can also send commands by hand. After a firmware or backend update, re-capture and refresh the spec and fixtures:
+The protocol is documented from real traffic, in `docs/protocol.md`, with the message definitions in `docs/asyncapi.yaml` (an AsyncAPI description; the code tables in the markdown are generated from it by `tools/gen_protocol.py`). `tools/console.py` records everything the system publishes (read-only by default) and can also send commands by hand. After a firmware or backend update, re-capture and refresh the spec and fixtures.
 
 ```bash
-# one-time setup: create a virtual environment and install the dependency
+# one-time setup: create a virtual environment and install the library
 python3 -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
-pip install -e ".[capture]"
+pip install -e .
 
 export LC_HOST=<host> LC_USER=<user> LC_PASS=<pass> LC_TOPIC_PREFIX='<Prefix Topic>'
-python3 tools/capture.py --hail         # record for 2 minutes
-python3 tools/capture.py --interactive  # type commands, see replies live
+python3 tools/console.py record --hail    # write a capture file, 2 minutes
+python3 tools/console.py watch            # print parsed messages, 1 minute
+python3 tools/console.py watch -i         # the same, and type commands to send
 ```
 
 While it runs, press a wall switch and change a light from the PowerPlane display, so `status` and `events` messages appear in the capture.
 
-**What it does.** It connects to the broker over TLS (MQTT 5, port 8883), subscribes to everything under your Prefix Topic (`<prefix>/#`), and writes every message to a new `capture.<date>_<time>.jsonl` file. By default it is read-only: the only thing it can send is one optional hail (`{"e":9,"g":0}`, which lists uncommissioned devices) to `<prefix>/cmd` when you pass `--hail`. With `--interactive` it also sends what you type (see below), so it can change your lights and settings.
+**Subcommands**
 
-**Options**
+| Subcommand | What it does |
+|---|---|
+| `record` | Writes every message to a new `<name>.YYYY.MM.DD_HH_MM_SS.jsonl` file and shows each one on screen as received. Default run time 120 seconds |
+| `watch` | Prints each message as a typed object, such as `ZoneEvent(...)` or `PdmHeartbeat(...)`. Default run time 60 seconds |
+
+Both connect to the broker over TLS (MQTT 5, port 8883) through the library's `MqttTransport` and subscribe to everything under your Prefix Topic. By default they are read-only: the only thing either can send is one optional hail (`{"e":9,"g":0}`, which lists uncommissioned devices) with `--hail`, plus whatever you type with `-i`.
+
+**Options (both subcommands)**
 
 | Option | Meaning |
 |---|---|
 | `--host`, `--port`, `--user`, `--password` | Connection details. Defaults come from `LC_HOST`, `LC_PORT` (8883), `LC_USER`, `LC_PASS`; prefer the environment variables so the password stays out of shell history |
 | `--topic-prefix P` | The Prefix Topic from your LumenCache connection details (env `LC_TOPIC_PREFIX`). Required. Quote it in the shell |
-| `--topic T` | Subscribe to `T` (relative to the prefix) instead of `<prefix>/#`; repeat for several. `+` matches one level, `#` matches everything below |
+| `--topic T` | Subscribe to `T` (relative to the prefix) instead of `#`; repeat for several. `+` matches one level, `#` matches everything below |
+| `--no-verify-tls` | Do not verify the broker's certificate |
 | `-i`, `--interactive` | Type JSON commands to send to `<prefix>/cmd`; ends at `--duration` or when you quit |
 | `--hail` | Send the one read-only hail described above |
-| `--duration N` | Seconds to run, interactive mode included (default 120). `0` runs until you stop it (Ctrl-C, or `quit` in interactive mode) |
-| `--name NAME` | Start of the output file name (default `capture`). The file is `NAME.YYYY.MM.DD_HH_MM_SS.jsonl`, using the local start time, so every run gets its own file, for example `capture.2026.10.10_08_11_00.jsonl` |
-| `--no-obfuscate` | Keep real ids, serials and addresses in the capture. Obfuscation is on by default (see Output) |
+| `--duration N` | Seconds to run, interactive mode included. `0` runs until you stop it (Ctrl-C, or `quit` in interactive mode) |
+| `--no-obfuscate` | Keep real ids, serials and addresses (see Obfuscation) |
+| `--replay FILE` | Use a fake system that replays a capture file instead of a real one. No `LC_*` variables needed |
+| `-v`, `--verbose` | Also log every message received and sent, and the reason a connection fails |
 
-**Interactive mode.** After it connects, type one JSON command per line and press Enter, for example `{"e":8,"g":2}`. Each line is published to `<prefix>/cmd` exactly as typed; lines that are not a JSON object are refused and nothing is sent. Messages from the system print as they arrive, each with a time, and are also written to the capture file. Because the script subscribes to the whole prefix, your own commands come back from the broker as `cmd` messages, which confirms they were published. Type `quit` or press Ctrl-C to exit. The only guard is on factory reset (`e:15` with `c:1`): it asks you to type `RESET` first. Everything else, including commands that persist settings, is sent as typed.
+`record` also takes `--name NAME`, the start of the output file name (default `capture`). The file is `NAME.YYYY.MM.DD_HH_MM_SS.jsonl`, using the local start time, so every run gets its own file and earlier captures are never overwritten.
 
-**Output.** Each run writes a new file named `capture.YYYY.MM.DD_HH_MM_SS.jsonl` (local start time; `--name` replaces `capture`), so earlier captures are never overwritten. It has one JSON object per message with the timestamp, direction (`recv` for messages from the broker, `sent` for commands this script published), topic, retained flag, and the payload (parsed as JSON when possible). Topics are written with the prefix removed, so the file does not contain your identifier and the protocol spec and fixtures do not depend on one system's prefix. Credentials are never written.
+**Interactive mode.** After it connects, type one JSON command per line and press Enter, for example `{"e":8,"g":2}`. Each line is published to `<prefix>/cmd` as compact JSON; lines that are not a JSON object are refused and nothing is sent. Messages from the system print as they arrive, and because the tool subscribes to the whole prefix, your own commands come back from the broker as `cmd` messages, which confirms they were published. Type `quit` or press Ctrl-C to exit. The only guard is on factory reset (`e:15` with `c:1`): it asks you to type `RESET` first. Everything else, including commands that persist settings, is sent as typed. With `--replay`, commands go to the fake system, which is a safe way to practise.
 
-**Obfuscation** is on by default and applies to the file, not the screen. System ids and device serials (`sys`, `hsn`) are replaced with stable fakes (`SYS0001`, `HSN0001`; the same real value always gets the same fake, and a socket's `_S1` suffix is kept, so relationships between messages survive), the free-text fields in `meta` (name, address, zip, phone, note) are blanked, MAC-shaped strings are masked, and the Prefix Topic is replaced by `<prefix>` wherever it appears in text. Commands you send are obfuscated the same way, so a `sent` line for a command that uses a real `hsn` shows the fake. The mapping is kept in memory only, so fakes are consistent within one capture and not between captures. Pass `--no-obfuscate` to keep the real values (for example to debug against your own system). Obfuscation is best effort: still review a capture for personal details before sharing it.
+**Output (`record`).** One JSON object per message with the timestamp, direction (`recv` for messages from the broker, `sent` for commands this tool published), topic, retained flag, and the payload (parsed as JSON when possible). Topics are written with the prefix removed, so the file does not contain your identifier and the protocol spec and fixtures do not depend on one system's prefix. Credentials are never written.
+
+**Obfuscation** is on by default. For `record` it applies to the file and the screen shows real values; for `watch` it applies to the screen. System ids and device serials (`sys`, `hsn`) are replaced with stable fakes (`SYS0001`, `HSN0001`; the same real value always gets the same fake, and a socket's `_S1` suffix is kept, so relationships between messages survive), the free-text fields in `meta` (name, address, zip, phone, note) are blanked, MAC-shaped strings are masked, and the Prefix Topic is replaced by `<prefix>` wherever it appears in text. Commands you send are obfuscated the same way, so a `sent` line for a command that uses a real `hsn` shows the fake. The mapping is kept in memory only, so fakes are consistent within one run and not between runs. Pass `--no-obfuscate` to keep the real values (for example to debug against your own system). Obfuscation is best effort: still review a capture for personal details before sharing it.
 
 **Troubleshooting**
 
-- *A subscription is refused:* the script prints the broker's reason. Check that `--topic-prefix` matches your Prefix Topic exactly, or use `--topic` for a topic you know you may read.
-- *Cannot connect:* check host, port, username and password.
+- *Cannot connect:* check host, port, username and password, and run with `-v` to see the reason.
+- *A subscription is refused:* check that `--topic-prefix` matches your Prefix Topic exactly, or use `--topic` for a topic you know you may read.
 - *No messages arrive:* trigger activity while it runs (press a switch), and check the prefix.
 
 ## License

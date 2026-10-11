@@ -12,7 +12,7 @@ import asyncio
 import json
 import logging
 import ssl
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any
 
 import aiomqtt
@@ -52,12 +52,14 @@ class MqttTransport:
         username: str | None = None,
         password: str | None = None,
         verify_tls: bool = True,
+        topics: Sequence[str] = ("#",),   # what to subscribe to, relative to the prefix
         reconnect_delays: tuple[float, ...] = RECONNECT_DELAYS,
         client_factory: Callable[[], Any] | None = None,   # builds a connection like aiomqtt.Client; for tests
     ) -> None:
         self._prefix = prefix.rstrip("/")
         self._host, self._port, self._username, self._password = host, port, username, password
         self._verify_tls = verify_tls
+        self._topics = tuple(topics)
         self._delays = reconnect_delays
         self._factory = client_factory or self._default_factory
         self._client: Any = None
@@ -65,6 +67,7 @@ class MqttTransport:
         self._connected = asyncio.Event()
         self._listeners: list[Callable[[Event], Any]] = []
         self._message_listeners: list[Callable[[Message], Any]] = []
+        self._raw_listeners: list[Callable[[str, bytes | str, bool], Any]] = []
         self._connection_listeners: list[Callable[[bool], Any]] = []
         self._pending: set[asyncio.Future[Any]] = set()   # async listeners still running
 
@@ -88,6 +91,14 @@ class MqttTransport:
         """Call `callback(True)` when connected and `callback(False)` when the connection is lost."""
         self._connection_listeners.append(callback)
         return lambda: self._connection_listeners.remove(callback)
+
+    def add_raw_listener(self, callback: Callable[[str, bytes | str, bool], Any]) -> Callable[[], None]:
+        """Call `callback(topic, payload, retained)` for every message under the prefix, before parsing.
+
+        The topic is relative to the prefix. For recording traffic (MQTT only).
+        """
+        self._raw_listeners.append(callback)
+        return lambda: self._raw_listeners.remove(callback)
 
     async def start(self) -> None:
         """Start connecting in the background. Returns at once; use wait_connected() to wait."""
@@ -137,7 +148,8 @@ class MqttTransport:
             try:
                 _LOGGER.info("Connecting to %s:%s", self._host, self._port)
                 async with self._factory() as client:
-                    await client.subscribe(f"{self._prefix}/#")
+                    for topic in self._topics:
+                        await client.subscribe(f"{self._prefix}/{topic.lstrip('/')}")
                     _LOGGER.info("Connected to %s:%s and subscribed to the system's topics", self._host, self._port)
                     self._client = client
                     attempt = 0
@@ -147,7 +159,7 @@ class MqttTransport:
                         if isinstance(payload, bytearray):
                             payload = bytes(payload)
                         if isinstance(payload, (bytes, str)):   # the broker can also send an empty or numeric payload
-                            self._dispatch(str(raw.topic), payload)
+                            self._dispatch(str(raw.topic), payload, bool(getattr(raw, "retain", False)))
                 _LOGGER.warning("Connection to %s:%s closed by the broker", self._host, self._port)
             except asyncio.CancelledError:
                 raise
@@ -168,12 +180,14 @@ class MqttTransport:
         for callback in list(self._connection_listeners):
             self._call(callback, value)
 
-    def _dispatch(self, topic: str, payload: bytes | str) -> None:
+    def _dispatch(self, topic: str, payload: bytes | str, retained: bool = False) -> None:
         try:
             relative = relative_topic(self._prefix, topic)
         except ValueError:
             _LOGGER.debug("Ignoring a message outside the system's topics")
             return
+        for raw_callback in list(self._raw_listeners):
+            self._call(raw_callback, relative, payload, retained)
         message = parse(relative, payload)
         _LOGGER.debug("Received %s on %s", type(message).__name__, relative)
         for message_callback in list(self._message_listeners):

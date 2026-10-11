@@ -207,3 +207,21 @@ def test_listeners_receive_domain_events_and_send_takes_domain_commands():
         assert events == [LightChanged("zone", 250, True, 40, None, None, "event")]
         assert conn.published == [(f"{PREFIX}/cmd", '{"e":56,"z":250,"bri":50,"fade":800}')]
     run(scenario)
+
+
+def test_raw_listeners_get_every_frame_before_parsing_and_topics_can_be_chosen():
+    async def scenario():
+        conn = FakeConnection()
+        client = MqttTransport("broker", PREFIX, topics=("status", "dev/#"), reconnect_delays=(0.01,),
+                               client_factory=lambda: conn)
+        frames = []
+        client.add_raw_listener(lambda topic, payload, retained: frames.append((topic, payload, retained)))
+        await client.start()
+        await client.wait_connected(1)
+        conn._queue.put_nowait(SimpleNamespace(topic=f"{PREFIX}/status", payload=b"not json", retain=True))
+        while not frames:
+            await asyncio.sleep(0.01)
+        await client.stop()
+        assert conn.subscribed == [f"{PREFIX}/status", f"{PREFIX}/dev/#"]
+        assert frames == [("status", b"not json", True)]
+    run(scenario)
