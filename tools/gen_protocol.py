@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Regenerate the code tables in docs/protocol.md and the code constants in
-src/pylumencache/protocol/codes.py and commands.py from docs/asyncapi.yaml.
+src/pylumencache/protocol/codes.py commands.py and models.py from docs/asyncapi.yaml.
 
 docs/asyncapi.yaml (an AsyncAPI 3.0 document) is the source for message codes,
 payload shapes and observations. The tables between the GENERATED markers in
-docs/protocol.md and the whole of codes.py and commands.py are written by this script; the rest
+docs/protocol.md and the whole of codes.py, commands.py and models.py are written by this script; the rest
 of protocol.md is hand-written. The script also checks the source: no key that YAML read as a
 boolean (such as an unquoted `on`), and every message example must match its
 payload schema.
@@ -26,11 +26,18 @@ try:
 except ImportError:  # validation of examples is skipped without it
     jsonschema = None
 
+try:  # jsonschema 4.18 and later
+    from referencing import Registry, Resource
+    from referencing.jsonschema import DRAFT7
+except ImportError:
+    Registry = None
+
 ROOT = Path(__file__).resolve().parent.parent
 SPEC_PATH = ROOT / "docs" / "asyncapi.yaml"
 DOC_PATH = ROOT / "docs" / "protocol.md"
 CODES_PATH = ROOT / "src" / "pylumencache" / "protocol" / "codes.py"
 COMMANDS_PATH = ROOT / "src" / "pylumencache" / "protocol" / "commands.py"
+MODELS_PATH = ROOT / "src" / "pylumencache" / "protocol" / "models.py"
 PY_TYPES = {"integer": "int", "number": "float", "string": "str"}
 
 BLOCK = re.compile(
@@ -170,6 +177,73 @@ def commands_module(spec: dict) -> str:
     return "\n".join(out) + "\n"
 
 
+def prop_type(schema: dict) -> str:
+    if "enum" in schema or "const" in schema:
+        return "int"
+    if schema["type"] == "array":
+        return f"list[{PY_TYPES[schema['items']['type']]}]"
+    return PY_TYPES[schema["type"]]
+
+
+def incoming_models(spec: dict) -> list:
+    """(class name, schema) for each received message that has a fixed shape."""
+    schemas = spec["components"]["schemas"]
+    found = []
+    for key, m in spec["components"]["messages"].items():
+        payload_ = m["payload"]
+        if m.get("x-documented") or m.get("x-model") is False or payload_.get("type") == "string":
+            continue
+        if "oneOf" in payload_:
+            for alt in payload_["oneOf"]:
+                ref = alt["$ref"].rsplit("/", 1)[1]
+                found.append((ref, schemas[ref]))
+        else:
+            found.append((key[0].upper() + key[1:], payload_))
+    return found
+
+
+def models_module(spec: dict) -> str:
+    """Python source for one dataclass per received message shape."""
+    out = [
+        '"""Received messages. Generated from docs/asyncapi.yaml by tools/gen_protocol.py; do not edit.',
+        "",
+        "Each class has from_dict(). Fields the spec does not list are kept in `extra`, and",
+        "optional fields are None when the message did not carry them. A missing required",
+        "field raises TypeError, which the parser turns into an UnknownMessage.",
+        '"""',
+        "from __future__ import annotations",
+        "",
+        "from dataclasses import dataclass, field",
+        "from typing import Any",
+    ]
+    schemas = spec["components"]["schemas"]
+    for cls, sch in incoming_models(spec):
+        required = set(sch.get("required", []))
+        fields = []   # (python name, wire name, type, required)
+        for wire, prop in sch["properties"].items():
+            if wire == "e":
+                continue
+            if "$ref" in prop:
+                prop = {**schemas[prop["$ref"].rsplit("/", 1)[1]], **{k: v for k, v in prop.items() if k != "$ref"}}
+            py = prop.get("x-py-name", wire)
+            if not py.isidentifier():
+                sys.exit(f"{cls}.{wire} is not a Python name: add x-py-name to it in {SPEC_PATH.name}")
+            fields.append((py, wire, prop_type(prop), wire in required))
+        fields.sort(key=lambda f: not f[3])   # required fields first
+        code_ = sch["properties"].get("e", {}).get("const")
+        out += ["", "", "@dataclass(frozen=True)", f"class {cls}:", f'    """Received message{f" with e:{code_}" if code_ is not None else ""}."""', ""]
+        for py, _, typ, req in fields:
+            out.append(f"    {py}: {typ}" if req else f"    {py}: {typ} | None = None")
+        out.append("    extra: dict[str, Any] = field(default_factory=dict)")
+        out += ["", f"    E = {code_}",
+                "    WIRE = {" + ", ".join(f'"{w}": "{py}"' for py, w, _, _ in fields) + "}",
+                "", "    @classmethod", "    def from_dict(cls, data: dict) -> "+cls+":",
+                "        values = {py: data[wire] for wire, py in cls.WIRE.items() if wire in data}",
+                "        extra = {k: v for k, v in data.items() if k not in cls.WIRE and k != \"e\"}",
+                "        return cls(**values, extra=extra)"]
+    return "\n".join(out) + "\n"
+
+
 def non_string_keys(node, path="") -> list:
     """YAML 1.1 turns on/off/yes/no into booleans; report any key that is not text."""
     bad = []
@@ -184,6 +258,16 @@ def non_string_keys(node, path="") -> list:
     return bad
 
 
+def payload_validator(spec: dict, message: str):
+    """A validator for one message's payload, resolving $refs against the whole spec."""
+    if Registry is None:  # older jsonschema
+        return jsonschema.Draft7Validator(spec["components"]["messages"][message]["payload"],
+                                          resolver=jsonschema.RefResolver.from_schema(spec))
+    registry = Registry().with_resource("urn:asyncapi", Resource(contents=spec, specification=DRAFT7))
+    return jsonschema.Draft7Validator(
+        {"$ref": f"urn:asyncapi#/components/messages/{message}/payload"}, registry=registry)
+
+
 def check_spec(spec: dict) -> list:
     problems = [f"key is not text (quote it): {p}" for p in non_string_keys(spec)]
 
@@ -195,9 +279,8 @@ def check_spec(spec: dict) -> list:
             seen_codes[m["x-code"]] = name
 
     if jsonschema is not None:
-        resolver = jsonschema.RefResolver.from_schema(spec)
         for name, m in spec["components"]["messages"].items():
-            validator = jsonschema.Draft7Validator(m["payload"], resolver=resolver)
+            validator = payload_validator(spec, name)
             for ex in m.get("examples", []):
                 for err in validator.iter_errors(ex["payload"]):
                     problems.append(f"example of message {name} does not match its payload: {err.message}")
@@ -245,6 +328,7 @@ def main() -> None:
         (DOC_PATH, render(DOC_PATH.read_text(encoding="utf-8"), spec)),
         (CODES_PATH, codes_module(spec)),
         (COMMANDS_PATH, commands_module(spec)),
+        (MODELS_PATH, models_module(spec)),
     ]
     stale = False
     for path, updated in targets:

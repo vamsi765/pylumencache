@@ -20,6 +20,7 @@ def test_spec_has_no_problems():
     (gen.DOC_PATH, lambda: gen.render(gen.DOC_PATH.read_text(encoding="utf-8"), SPEC)),
     (gen.CODES_PATH, lambda: gen.codes_module(SPEC)),
     (gen.COMMANDS_PATH, lambda: gen.commands_module(SPEC)),
+    (gen.MODELS_PATH, lambda: gen.models_module(SPEC)),
 ])
 def test_generated_file_is_up_to_date(path: Path, build):
     assert path.read_text(encoding="utf-8") == build(), "run: python3 tools/gen_protocol.py"

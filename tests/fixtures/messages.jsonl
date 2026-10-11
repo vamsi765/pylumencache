@@ -1,0 +1,11 @@
+{"topic": "status", "payload": {"e": 139, "g": 1, "hsn": "HSN0001", "swv": "01.00.02", "hwv": "01.00", "time": 2100733, "heap": 6177668}, "expect": "PowerPlaneHeartbeat"}
+{"topic": "status", "payload": {"e": 139, "g": 2, "bay": 3, "hsn": "HSN0002", "swv": "01.00.12m", "hwv": "02.05", "time": 2101123, "heap": 8480728, "temp": 31.89, "rh": 42.25}, "expect": "PdmHeartbeat"}
+{"topic": "status", "payload": {"e": 139, "g": 100, "opc": 2, "mode": 3, "12v": 1, "term": 1, "heap": 13416, "txrx": [0, 0, 112, 0], "uptime": 2135, "temp": 29.55}, "expect": "ControllerHeartbeat"}
+{"topic": "meta", "payload": {"sys": "SYS0001", "meta": {"plt": "", "cat": 0, "sys_info": {"sys": "SYS0001", "name": "", "addr1": "", "addr2": "", "zip": "", "phone": "", "note": "", "cat": 2}, "org_info": {"org": 65535, "name": "", "cat": 1}}}, "expect": "SystemInfo"}
+{"topic": "dev/sw:13", "payload": {"gid": 13, "hsn": "HSN0003", "name": "SW-D", "cat": 40, "parent": 0, "time": 5928}, "expect": "DeviceAnnouncementAt"}
+{"topic": "status", "payload": {"e": 56, "z": 250, "on": 0, "dev": 12, "g": 65534}, "expect": "ZoneEvent"}
+{"topic": "status", "payload": {"e": 56, "z": 250, "on": 1, "bri": 100, "cct": 5000, "dev": 12, "g": 65534}, "expect": "ZoneEvent"}
+{"topic": "meta", "payload": {"e": 137, "g": 0, "hsn": "HSN0003", "b": 0, "pc": 2, "cat": 37, "hwm": "90003-200__SC-PV2-50W"}, "expect": "HailReply"}
+{"topic": "meta", "payload": {"e": 138, "g": 12, "b": 0, "cm": 2, "pc": 2, "hwm": "90008-000__SW-D", "swv": "0.2.8.10L", "hwv": "0000001.64k.8k", "hsn": "HSN0002", "cat": 40, "pbmod": 0, "pbmak": 0, "pbb": 1, "pbmask": 65535, "rv": 134225920}, "expect": "SwitchConfig"}
+{"topic": "status", "payload": {"e": 139, "g": 12, "uirgb": "#0000FF", "term": 1, "heap": 13384, "txrx": [296, 485, 0, 0], "uptime": 35999}, "expect": "SwitchHeartbeat"}
+{"topic": "errors", "payload": {"e": 254, "g": 100, "err": 38, "v": 254}, "expect": "ErrorReport"}

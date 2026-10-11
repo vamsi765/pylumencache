@@ -370,6 +370,7 @@ components:
           type: integer
         12v:
           type: integer
+          x-py-name: v12
         term:
           type: integer
         heap:
@@ -921,6 +922,7 @@ components:
       - payload: {e: 137, g: 0, hsn: <hsn>, b: 0, pc: 2, cat: 37, hwm: 90003-200__SC-PV2-50W}
     systemInfo:
       name: systemInfo
+      x-model: false   # nested free-form data; the parser returns it as a SystemInfo wrapper
       title: System information
       summary: System information
       description: Published once after the system connects, before the device list. The name and address fields
