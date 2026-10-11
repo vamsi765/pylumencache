@@ -19,7 +19,7 @@ Unofficial Python library for [LumenCache](https://www.lumencache.com) ReNetA li
 | `src/pylumencache/obfuscate.py` | `Obfuscator`: replaces ids, serials, free text and MACs with stable fakes. Used by the capture tool for its files and by `watch.py` for the screen |
 | `tools/watch.py` | Prints every parsed message, from a real system or, with `--replay FILE`, from a capture. Ids are replaced with fakes unless `--no-obfuscate` |
 | `tools/gen_protocol.py` | Regenerates the tables in `protocol.md` and `codes.py`, `commands.py` and `models.py`; `--check` fails when either is stale |
-| `tools/lumencache_capture.py` | Records and sends MQTT traffic |
+| `tools/capture.py` | Records and sends MQTT traffic |
 
 ## Setup
 
@@ -56,7 +56,7 @@ Listeners can be plain functions or coroutines; one that raises does not affect 
 
 The protocol is documented from real traffic, in `docs/protocol.md`, with the message definitions in `docs/asyncapi.yaml` (an AsyncAPI description; the code tables in the markdown are generated from it by `tools/gen_protocol.py`). The library's CLI includes a capture command (`lumencache capture`, *planned*) that records everything the system publishes, read-only by default, and a diff command that compares a new capture with the stored fixtures. After a firmware or backend update, re-capture, diff, and refresh the spec and fixtures.
 
-Until the CLI exists, `tools/lumencache_capture.py` does the same job, and can also send commands by hand:
+Until the CLI exists, `tools/capture.py` does the same job, and can also send commands by hand:
 
 ```bash
 # one-time setup: create a virtual environment and install the dependency
@@ -65,8 +65,8 @@ source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -e ".[capture]"
 
 export LC_HOST=<host> LC_USER=<user> LC_PASS=<pass> LC_TOPIC_PREFIX='<Prefix Topic>'
-python3 tools/lumencache_capture.py --hail         # record for 2 minutes
-python3 tools/lumencache_capture.py --interactive  # type commands, see replies live
+python3 tools/capture.py --hail         # record for 2 minutes
+python3 tools/capture.py --interactive  # type commands, see replies live
 ```
 
 While it runs, press a wall switch and change a light from the PowerPlane display, so `status` and `events` messages appear in the capture.

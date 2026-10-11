@@ -11,8 +11,8 @@ your lights and settings. The only guard is a confirmation for factory reset.
 
 Setup:   pip install -e ".[capture]"      (from the repository root)
 Run:     export LC_HOST=... LC_USER=... LC_PASS=... LC_TOPIC_PREFIX='...'
-         python3 lumencache_capture.py --hail            # record for 2 minutes
-         python3 lumencache_capture.py --interactive     # type commands
+         python3 capture.py --hail            # record for 2 minutes
+         python3 capture.py --interactive     # type commands
 
 Output:  <out_filename>.YYYY.MM.DD_HH_MM_SS.jsonl (local time of the start; --name sets <out_filename>,
          default "capture"), a new file per run. One JSON object per message, with "dir" set to "recv" or
