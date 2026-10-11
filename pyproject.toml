@@ -9,7 +9,7 @@ description = "Unofficial Python client for LumenCache ReNetA lighting"
 readme = "README.md"
 requires-python = ">=3.12"
 license = "Apache-2.0"
-dependencies = []
+dependencies = ["aiomqtt>=2.0"]
 
 [project.optional-dependencies]
 capture = ["paho-mqtt"]

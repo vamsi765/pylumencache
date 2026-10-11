@@ -13,6 +13,8 @@ Unofficial Python library for [LumenCache](https://www.lumencache.com) ReNetA li
 | `docs/asyncapi.yaml` | The protocol, as an AsyncAPI 3.0 description. The single source of truth for message codes and payloads |
 | `docs/protocol.md` | Prose notes and open questions. Its code tables are generated from the YAML |
 | `src/pylumencache/` | The library. `protocol/` has `codes.py` (the `Code` enum), `commands.py` (one builder per documented command, such as `zone_control(zone_id=250, brightness=50)`) and `models.py` (a dataclass per received message), all generated from the YAML, and `parser.py` (`parse(topic, payload)` returns a typed message, or an `UnknownMessage` for anything unrecognised) |
+| `src/pylumencache/client.py` | Async MQTT client: connects over TLS, keeps the connection up, delivers parsed messages to listeners and publishes commands |
+| `tools/watch.py` | Live check of the client: prints every parsed message |
 | `tools/gen_protocol.py` | Regenerates the tables in `protocol.md` and `codes.py`, `commands.py` and `models.py`; `--check` fails when either is stale |
 | `tools/lumencache_capture.py` | Records and sends MQTT traffic |
 
@@ -24,6 +26,27 @@ source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 python3 tools/gen_protocol.py --check
 ```
+
+## Using the client
+
+```python
+import asyncio
+from pylumencache.client import LumenCacheClient
+from pylumencache.protocol import commands
+
+async def main():
+    client = LumenCacheClient("<host>", "<Prefix Topic>", username="<user>", password="<pass>")
+    client.add_listener(print)               # receives typed messages, such as ZoneEvent or PdmHeartbeat
+    await client.start()                     # connects in the background and reconnects if it drops
+    await client.wait_connected(30)
+    await client.send(commands.zone_control(zone_id=250, brightness=50, fade=800))
+    await asyncio.sleep(60)
+    await client.stop()
+
+asyncio.run(main())
+```
+
+Listeners can be plain functions or coroutines; one that raises does not affect the others. `tools/watch.py` does the same from the command line.
 
 ## Capturing the protocol
 
