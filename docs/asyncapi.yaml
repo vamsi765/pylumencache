@@ -21,7 +21,7 @@
 asyncapi: 3.0.0
 info:
   title: LumenCache ReNetA MQTT
-  version: 0.1.0
+  version: 0.2.0
   description: Observed MQTT protocol of a LumenCache ReNetA lighting system. Not an official specification; written
     from captures of one system and LumenCache's Commands List. docs/protocol.md explains it in prose and has its
     code tables generated from this file.
@@ -99,6 +99,8 @@ channels:
         $ref: '#/components/messages/systemInfo'
       hailReply:
         $ref: '#/components/messages/hailReply'
+      switchConfig:
+        $ref: '#/components/messages/switchConfig'
   dev:
     address: '{prefix}/dev/{path}'
     parameters:
@@ -230,6 +232,12 @@ operations:
       $ref: '#/channels/cmd'
     messages:
     - $ref: '#/channels/cmd/messages/emptyMessage'
+  receiveSwitchConfig:
+    action: receive
+    channel:
+      $ref: '#/channels/meta'
+    messages:
+    - $ref: '#/channels/meta/messages/switchConfig'
 components:
   securitySchemes:
     credentials:
@@ -353,8 +361,9 @@ components:
         e:
           const: 139
         g:
-          const: 100
-          description: 100 is not a GID in the inventory; the controller is inferred
+          type: integer
+          description: 100 for the controller. GIDs 101 and 0 send the same shape; none of the three is in the inventory
+            (inferred to be nodes of the same kind)
         opc:
           type: integer
         mode:
@@ -377,7 +386,35 @@ components:
           description: Uptime in seconds
         temp:
           type: number
-      description: 'Not periodic: sent after boot and in the minutes after a light command, with widening gaps.'
+      description: 'GID 100: not periodic, sent after boot and in the minutes after a light command, with widening
+        gaps. GIDs 101 and 0: one heartbeat each, at about 10 hours of uptime.'
+    SwitchHeartbeat:
+      type: object
+      required: [e, g, uirgb, term, heap, txrx, uptime]
+      properties:
+        e:
+          const: 139
+        g:
+          type: integer
+          description: GID of the wall switch
+        uirgb:
+          type: string
+          description: 'LED color of the switch, as #RRGGBB'
+        term:
+          type: integer
+        heap:
+          type: integer
+        txrx:
+          type: array
+          items:
+            type: integer
+          minItems: 4
+          maxItems: 4
+          description: Unknown
+        uptime:
+          type: integer
+          description: Uptime in seconds
+      description: One seen, at about 10 hours of uptime. The normal rhythm is unknown.
   messages:
     ping:
       name: ping
@@ -446,11 +483,14 @@ components:
       examples:
       - payload: {e: 10, g: 54}
       x-tried:
-      - sent: '`g` 54, 2 and 14'
+      - sent: '`g` 12 (a wall switch)'
+        result: 'One reply: `e:138` on `meta` (section 5.5)'
+      - sent: '`g` 54, 2, 14, 1, 3 and 15'
         result: No reply
       x-seen:
         as: command on `cmd`
-        text: Only the echo and the empty message followed (section 6)
+        text: Replied only for a wall switch (`e:138` on `meta`, section 5.5). No reply for GIDs 1, 2, 3, 14 or
+          15
     heartbeatRequest:
       name: heartbeatRequest
       title: Heartbeat request
@@ -492,7 +532,7 @@ components:
       examples:
       - payload: {e: 13, g: 54}
       x-tried:
-      - sent: '`g` 54, 2 and 14'
+      - sent: '`g` 54, 2, 14, 1 and 15'
         result: No reply, and no extra status
       x-seen:
         as: command on `cmd`
@@ -526,6 +566,14 @@ components:
       - when: {c: 1}
         level: confirm
         reason: factory reset
+      x-seen:
+        as: command on `cmd`
+        text: 'Reboot (`c:0`) sent to GIDs 14, 2 and 1: only the echo and the empty message followed, and the PDM
+          and PowerPlane did not restart (section 6)'
+      x-tried:
+      - sent: '`g` 14, 2 and 1, `c` 0 (reboot)'
+        result: 'No reply, and no visible reboot: the PDM''s and PowerPlane''s uptimes kept counting and the inventory
+          was not republished. 🔬 Effect on the card (GID 14) not reported'
     cardMode:
       name: cardMode
       title: Card mode
@@ -621,11 +669,11 @@ components:
       - payload: {e: 49, g: 54, a: 5, zid: 200, bri: 75, cct: 3000, store: 1}
       x-uses-store: true
       x-tried:
-      - sent: '`g` 2, `a` 9 (list zones)'
+      - sent: '`g` 2 and 1, `a` 9 (list zones)'
         result: No reply
       x-seen:
         as: command on `cmd`
-        text: '`{"e":49,"g":2,"a":9}` (list zones) got no reply'
+        text: '`{"e":49,"g":2,"a":9}` and `{"e":49,"g":1,"a":9}` (list zones) got no reply'
     zoneControl:
       name: zoneControl
       title: Zone control
@@ -651,8 +699,9 @@ components:
       examples:
       - payload: {e: 56, z: 200, bri: 50, cct: 4000, fade: 800}
       x-tried:
-      - sent: '`z` 250, `bri` 50, `cct` 4000, `fade` 800'
-        result: No reply and no `e:56` status event. 🔬 Effect on the lights not reported
+      - sent: '`z` 250; `bri` 10, 50 and 100; `cct` 3000 and 4000; `fade` 800'
+        result: 'Worked: brightness and color temperature followed, with the fade (confirmed by eye). No reply and
+          no `e:56` status event'
     directControl:
       name: directControl
       title: Direct control
@@ -674,30 +723,39 @@ components:
             $ref: '#/components/schemas/ColorTemperature'
           fade:
             $ref: '#/components/schemas/Fade'
+          z:
+            $ref: '#/components/schemas/ZoneId'
       examples:
       - payload: {e: 57, g: 54, bri: 100, cct: 3000, fade: 1000}
       x-tried:
       - sent: '`g` 100, 14, 10 and 0; `bri` 0, 10, 12.5, 50, 100 and 500; `cct` 2700 to 5000; `fade` 800 and 1000'
         result: To GID 100 the lights changed to the commanded brightness (confirmed by eye), and 12.5 after 50
           dimmed them. 🔬 Effect for GIDs 14, 10 and 0 not reported. No state message, no error
+      - sent: '`z` 250 instead of `g`; `bri` 10 and 50; `cct` 3000 and 5000; `fade` 800'
+        result: 'Worked the same as `e:56`: brightness and color temperature followed (confirmed by eye). So `e:57`
+          accepts a zone address as well as a GID'
       x-seen:
         as: command on `cmd`
-        text: Direct control. Sent to GIDs 100, 14, 10 and 0. To GID 100 the lights followed the command (confirmed
-          by eye); the effect for the other GIDs is not reported. No state message or error was published
+        text: Direct control. Sent to GIDs 100, 14, 10 and 0, and to zone 250 with `z`. To GID 100 and to zone 250
+          the lights followed the command (confirmed by eye); the effect for the other GIDs is not reported. No
+          state message or error was published
     heartbeat:
       name: heartbeat
       title: Heartbeat
       summary: Heartbeat
-      description: 'Liveness message with three shapes, by source: the PowerPlane, the PDM and the controller.'
+      description: 'Liveness message with several shapes, by source: the PowerPlane, the PDM, controller nodes (GIDs
+        100, 101 and 0) and a wall switch.'
       x-code: 139
       x-seen:
         as: status
-        text: Periodic heartbeat from the PowerPlane, the PDM and the controller (section 5.1)
+        text: Periodic heartbeat from the PowerPlane and the PDM; irregular ones from controller nodes and a wall
+          switch (section 5.1)
       payload:
         oneOf:
         - $ref: '#/components/schemas/PowerPlaneHeartbeat'
         - $ref: '#/components/schemas/PdmHeartbeat'
         - $ref: '#/components/schemas/ControllerHeartbeat'
+        - $ref: '#/components/schemas/SwitchHeartbeat'
       examples:
       - name: PowerPlane
         payload: {e: 139, g: 1, hsn: <hsn>, swv: 01.00.02, hwv: '01.00', time: 300737, heap: 6181804}
@@ -720,6 +778,51 @@ components:
           - 165
           uptime: 75
           temp: 30.6
+      - name: Controller GID 101
+        payload:
+          e: 139
+          g: 101
+          opc: 2
+          mode: 3
+          12v: 1
+          term: 1
+          heap: 13448
+          txrx:
+          - 485
+          - 0
+          - 113
+          - 485
+          uptime: 35995
+          temp: 30.41
+      - name: Controller GID 0
+        payload:
+          e: 139
+          g: 0
+          opc: 2
+          mode: 3
+          12v: 1
+          term: 1
+          heap: 13520
+          txrx:
+          - 485
+          - 292
+          - 408
+          - 485
+          uptime: 35994
+          temp: 29.04
+      - name: Wall switch
+        payload:
+          e: 139
+          g: 12
+          uirgb: '#0000FF'
+          term: 1
+          heap: 13384
+          txrx:
+          - 296
+          - 485
+          - 0
+          - 0
+          uptime: 35999
     zoneEvent:
       name: zoneEvent
       title: Zone event
@@ -729,7 +832,8 @@ components:
       x-code: 56
       x-seen:
         as: status; command on `cmd`
-        text: 'Zone on/off/brightness/color event. Sent as a command to zone 250: no reply'
+        text: 'Zone on/off/brightness/color event. Sent as a command to zone 250 it worked: brightness and color
+          temperature followed, with the fade (confirmed by eye); no reply'
       payload:
         type: object
         required: [e]
@@ -921,3 +1025,62 @@ components:
       payload: {type: string, maxLength: 0}
       examples:
       - payload: ''
+    switchConfig:
+      name: switchConfig
+      title: Switch configuration
+      summary: Switch configuration
+      description: Reply to a config request (e:10) for a wall switch. Published on meta. The same request for other
+        devices got no reply.
+      x-code: 138
+      x-seen:
+        as: meta
+        text: 'Reply to `e:10` for a wall switch: its configuration (section 5.5)'
+      payload:
+        type: object
+        required: [e]
+        properties:
+          e:
+            const: 138
+          g:
+            $ref: '#/components/schemas/Gid'
+          b:
+            type: integer
+            description: Unknown (0)
+          cm:
+            type: integer
+            description: Unknown (2)
+          pc:
+            type: integer
+            description: Unknown (2)
+          hwm:
+            type: string
+            description: 'Hardware model: part number and name'
+          swv:
+            type: string
+            description: Software version
+          hwv:
+            type: string
+            description: Hardware version
+          hsn:
+            $ref: '#/components/schemas/Hsn'
+          cat:
+            type: integer
+            description: Device category (40 is a wall switch)
+          pbmod:
+            type: integer
+            description: Unknown (0)
+          pbmak:
+            type: integer
+            description: Unknown (0)
+          pbb:
+            type: integer
+            description: Unknown (1)
+          pbmask:
+            type: integer
+            description: Unknown (65535)
+          rv:
+            type: integer
+            description: Unknown (134225920)
+      examples:
+      - payload: {e: 138, g: 12, b: 0, cm: 2, pc: 2, hwm: 90008-000__SW-D, swv: 0.2.8.10L, hwv: 0000001.64k.8k,
+          hsn: <hsn>, cat: 40, pbmod: 0, pbmak: 0, pbb: 1, pbmask: 65535, rv: 134225920}

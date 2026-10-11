@@ -1,6 +1,6 @@
 # ReNetA MQTT protocol (observed)
 
-> **Version 0.1.0.** Written from several captures of one system plus the command codes in LumenCache's "Commands List" article. It is not an official specification. Anything marked 🔬 is unknown or an inference and must be confirmed (from a new capture or from LumenCache) before code depends on it. Identifiers are shown as placeholders such as `<hsn>`.
+> **Version 0.2.0.** Written from several captures of one system plus the command codes in LumenCache's "Commands List" article. It is not an official specification. Anything marked 🔬 is unknown or an inference and must be confirmed (from a new capture or from LumenCache) before code depends on it. Identifiers are shown as placeholders such as `<hsn>`.
 
 ## 1. Connection
 
@@ -51,14 +51,16 @@ Codes seen in the captures:
 |---|---|---|
 | 8 | command on `cmd` | Only the echo and the empty message followed (section 6) |
 | 9 | command on `cmd` | Hail: `{"e":9,"g":0}` lists devices still at GID 0. It answered once, as `e:137` on `meta` (section 5.4). `e:9` with a GID (54, 14) got no reply |
-| 10 | command on `cmd` | Only the echo and the empty message followed (section 6) |
+| 10 | command on `cmd` | Replied only for a wall switch (`e:138` on `meta`, section 5.5). No reply for GIDs 1, 2, 3, 14 or 15 |
 | 11 | command on `cmd` | Only the echo and the empty message followed (section 6) |
 | 13 | command on `cmd` | Only the echo and the empty message followed (section 6) |
-| 49 | command on `cmd` | `{"e":49,"g":2,"a":9}` (list zones) got no reply |
-| 56 | status; command on `cmd` | Zone on/off/brightness/color event. Sent as a command to zone 250: no reply |
-| 57 | command on `cmd` | Direct control. Sent to GIDs 100, 14, 10 and 0. To GID 100 the lights followed the command (confirmed by eye); the effect for the other GIDs is not reported. No state message or error was published |
+| 15 | command on `cmd` | Reboot (`c:0`) sent to GIDs 14, 2 and 1: only the echo and the empty message followed, and the PDM and PowerPlane did not restart (section 6) |
+| 49 | command on `cmd` | `{"e":49,"g":2,"a":9}` and `{"e":49,"g":1,"a":9}` (list zones) got no reply |
+| 56 | status; command on `cmd` | Zone on/off/brightness/color event. Sent as a command to zone 250 it worked: brightness and color temperature followed, with the fade (confirmed by eye); no reply |
+| 57 | command on `cmd` | Direct control. Sent to GIDs 100, 14, 10 and 0, and to zone 250 with `z`. To GID 100 and to zone 250 the lights followed the command (confirmed by eye); the effect for the other GIDs is not reported. No state message or error was published |
 | 137 | meta | Reply to a hail: a device at GID 0 (section 5.4) |
-| 139 | status | Periodic heartbeat from the PowerPlane, the PDM and the controller (section 5.1) |
+| 138 | meta | Reply to `e:10` for a wall switch: its configuration (section 5.5) |
+| 139 | status | Periodic heartbeat from the PowerPlane and the PDM; irregular ones from controller nodes and a wall switch (section 5.1) |
 | 254 | status and `errors` | Error report. Seen once, shortly after a restart |
 <!-- END GENERATED codes-seen -->
 
@@ -162,13 +164,15 @@ Observations from this system:
 
 ### 5.1 Heartbeat: `e:139`
 
-Three sources send `e:139` on `status`, and each has its own shape and rhythm:
+Several sources send `e:139` on `status`, each with its own shape and rhythm:
 
 | `g` | Source | Interval | Fields |
 |---|---|---|---|
 | 1 | PowerPlane | 5 min. After a boot the first one arrives 300 s later | `e g hsn swv hwv time heap` |
 | 2 | PDM | 60 s | `e g bay hsn swv hwv time heap temp rh` |
 | 100 | Controller. 🔬 Inferred; GID 100 is not in the inventory | Not periodic: after a boot, and in the minutes after a light command. Gaps widen (15, 20, 20, 25, 30 s). None in 7 minutes of idle and query commands | `e g opc mode 12v term heap txrx uptime temp` |
+| 101, 0 | Nodes of the same kind as the controller. 🔬 Inferred; neither is in the inventory | One each, at about 10 hours of uptime. Normal rhythm unknown | same as GID 100 |
+| 12 | A wall switch (SW-D) | One, at about 10 hours of uptime. Normal rhythm unknown | `e g uirgb term heap txrx uptime` |
 
 PDM example:
 
@@ -188,20 +192,29 @@ Controller example:
 { "e": 139, "g": 100, "opc": 2, "mode": 3, "12v": 1, "term": 1, "heap": 13416, "txrx": [165, 0, 278, 165], "uptime": 75, "temp": 30.6 }
 ```
 
+Wall switch example:
+
+```json
+{ "e": 139, "g": 12, "uirgb": "#0000FF", "term": 1, "heap": 13384, "txrx": [296, 485, 0, 0], "uptime": 35999 }
+```
+
 | Field | Meaning |
 |---|---|
-| `g` | GID of the reporting PowerPlane or PDM; 100 for the controller |
+| `g` | GID of the reporting device. 100, 101 and 0 are not in the inventory |
 | `hsn` | Serial of the reporting device |
 | `bay` | 🔬 Unknown (3 in every PDM heartbeat) |
 | `swv`, `hwv` | Software and hardware version. PDM: 01.00.12m and 02.05. PowerPlane: 01.00.02 and 01.00 |
 | `time` | Uptime in milliseconds (PowerPlane and PDM). Confirmed: the PDM value matched the real time since the reboot to within 15 s after 8.5 hours |
-| `uptime` | Uptime in seconds (controller). Confirmed: 75 at 81 s after the boot time that the other heartbeats imply |
+| `uptime` | Uptime in seconds (controller nodes and the switch). Confirmed: 75 at 81 s after the boot time that the other heartbeats imply |
 | `heap` | Free memory (bytes). 🔬 Unit inferred |
 | `temp`, `rh` | Temperature (°C) and relative humidity (%). 🔬 Units inferred |
 | `opc`, `mode`, `12v`, `term` | 🔬 Unknown (2, 3, 1 and 1 in every controller heartbeat) |
+| `uirgb` | LED color of the wall switch, as `#RRGGBB` (blue in the one heartbeat seen) |
 | `txrx` | 🔬 Unknown. Four counters; the first and fourth were always equal, and they were non-zero right after commands and zero when idle, so they may count traffic since the last heartbeat |
 
 The heartbeats are liveness signals: if one stops, the system or that device is probably gone. The controller sends nothing when idle, so it cannot be used as a liveness signal; the PDM's 60 s is the steadier one.
+
+GIDs 101, 0 and 12 each sent a single heartbeat, all at 35,994 to 35,999 s of uptime (about 10 hours). Their normal rhythm is unknown, so a wall switch cannot be treated as silent: it does send heartbeats, just rarely.
 
 🔬 In one capture the PowerPlane's `time` was 4 h 30 min while the PDM's was 8 h 33 min, so the PowerPlane restarted about 4 h after the system reboot. Nobody power-cycled it, so it restarted by itself. 🔬 Cause unknown (a watchdog or crash reset is possible); the PDM did not restart.
 
@@ -252,6 +265,23 @@ The reply to a hail (`{"e":9,"g":0}`), published on `meta` about 0.6 s after the
 
 One device answered. 🔬 It is not in the inventory under a GID of its own. The system has two SC-PV2-50W cards (GID 15 is one), so whether this is a third, unassigned one is unconfirmed.
 
+### 5.5 Switch configuration: `e:138`
+
+The reply to a config request (`{"e":10,"g":12}`) for a wall switch, published on `meta`. The same request for GIDs 1, 2, 3, 14 and 15 got no reply.
+
+```json
+{ "e": 138, "g": 12, "b": 0, "cm": 2, "pc": 2, "hwm": "90008-000__SW-D", "swv": "0.2.8.10L", "hwv": "0000001.64k.8k", "hsn": "<hsn>", "cat": 40, "pbmod": 0, "pbmak": 0, "pbb": 1, "pbmask": 65535, "rv": 134225920 }
+```
+
+| Field | Meaning |
+|---|---|
+| `g`, `hsn`, `cat` | GID, serial and category (40, a wall switch) |
+| `hwm` | Hardware model: part number and name |
+| `swv`, `hwv` | Software and hardware version. The formats differ from the PowerPlane and PDM |
+| `b`, `cm`, `pc` | 🔬 Unknown (0, 2 and 2). `cm` is also a socket card parameter (`e:18`), which may be a coincidence |
+| `pbmod`, `pbmak`, `pbb`, `pbmask` | 🔬 Unknown. The `pb` prefix may stand for push button |
+| `rv` | 🔬 Unknown (134225920) |
+
 ## 6. Commands tried
 
 Commands sent from the capture tool in interactive mode. All of them got the echo and the empty `cmd` message described in section 2. The table lists anything beyond that.
@@ -262,15 +292,18 @@ Commands sent from the capture tool in interactive mode. All of them got the ech
 | `e:8` | `g` 54, 2 and 14 | No reply |
 | `e:9` | `g` 0 (hail) | One reply: `e:137` on `meta` (section 5.4). An earlier hail got no reply |
 | `e:9` | `g` 54, twice; `g` 14 | No reply |
-| `e:10` | `g` 54, 2 and 14 | No reply |
+| `e:10` | `g` 12 (a wall switch) | One reply: `e:138` on `meta` (section 5.5) |
+| `e:10` | `g` 54, 2, 14, 1, 3 and 15 | No reply |
 | `e:11` | `g` 54, 2 and 1 | No reply, and no extra heartbeat |
-| `e:13` | `g` 54, 2 and 14 | No reply, and no extra status |
-| `e:49` | `g` 2, `a` 9 (list zones) | No reply |
-| `e:56` | `z` 250, `bri` 50, `cct` 4000, `fade` 800 | No reply and no `e:56` status event. 🔬 Effect on the lights not reported |
+| `e:13` | `g` 54, 2, 14, 1 and 15 | No reply, and no extra status |
+| `e:15` | `g` 14, 2 and 1, `c` 0 (reboot) | No reply, and no visible reboot: the PDM's and PowerPlane's uptimes kept counting and the inventory was not republished. 🔬 Effect on the card (GID 14) not reported |
+| `e:49` | `g` 2 and 1, `a` 9 (list zones) | No reply |
+| `e:56` | `z` 250; `bri` 10, 50 and 100; `cct` 3000 and 4000; `fade` 800 | Worked: brightness and color temperature followed, with the fade (confirmed by eye). No reply and no `e:56` status event |
 | `e:57` | `g` 100, 14, 10 and 0; `bri` 0, 10, 12.5, 50, 100 and 500; `cct` 2700 to 5000; `fade` 800 and 1000 | To GID 100 the lights changed to the commanded brightness (confirmed by eye), and 12.5 after 50 dimmed them. 🔬 Effect for GIDs 14, 10 and 0 not reported. No state message, no error |
+| `e:57` | `z` 250 instead of `g`; `bri` 10 and 50; `cct` 3000 and 5000; `fade` 800 | Worked the same as `e:56`: brightness and color temperature followed (confirmed by eye). So `e:57` accepts a zone address as well as a GID |
 <!-- END GENERATED commands-tried -->
 
-So of the query commands only the hail answers. None of the others republished the inventory, even for real GIDs, so P-6 is still open. They may need something we have not sent, or answer on a path we do not see. GID 54 in the Commands List examples is not a device on this system (GIDs are 1 to 15, plus 100). Not tried: `e:36`, `e:32`, `e:18`, `e:15` (they change or persist settings).
+Of the query commands only the hail and `e:10` for a wall switch answer. None republished the inventory, even for real GIDs, so P-6 is still open. They may need something we have not sent, or answer on a path we do not see. `e:15` with `c:0` (reboot) sent to GIDs 14, 2 and 1 had no visible effect on the PDM or the PowerPlane, whose uptimes kept counting. GID 54 in the Commands List examples is not a device on this system (GIDs are 1 to 15, plus 100). Not tried: `e:36`, `e:32`, `e:18`, `e:15` with `c:1` (they change or persist settings).
 
 ## 7. Timelines
 
@@ -305,30 +338,31 @@ IDs refer to the register in the implementation plan.
 | ID | Question | Status |
 |---|---|---|
 | P-1 | Topic names | Mostly known (section 2). `events` never seen; `errors` seen only once, with the `e:254` report |
-| P-2 | `status` schema | Partly known (`e:139` from three sources, `e:56`, `e:254`). Others unknown |
+| P-2 | `status` schema | Partly known (`e:139` from several sources, `e:56`, `e:254`). Others unknown |
 | P-3 | `meta` and device schema | Known (section 4). Some field meanings unknown |
 | P-4 | Events (switch, fault, mismatch) | Switch presses seen as `e:56`. Faults and mismatches unknown |
 | P-5 | Command acknowledgements and errors | Partly: every command gets an echo and an empty `cmd` message, even for GIDs that do not exist, so it is not a success signal. No error codes seen, even for `bri` 500 |
-| P-6 | Command to republish the inventory | Not documented. A reboot republishes it. `e:8`, `e:9`, `e:10`, `e:11`, `e:13` and `e:49` with real GIDs got no reply and no inventory. Only the hail answers (`e:137`) |
+| P-6 | Command to republish the inventory | Not documented. A reboot republishes it. `e:8`, `e:9`, `e:10`, `e:11`, `e:13` and `e:49` with real GIDs got no reply and no inventory. Only the hail (`e:137`) and `e:10` for a wall switch (`e:138`) answer |
 | P-7 | Retained messages | Answered: none retained, in any capture |
 | P-8 | Brightness encoding | Known: `bri` 0 to 100. A decimal (12.5) was accepted and dimmed the light. 🔬 Whether 0.1% resolution is honored |
 | P-9 | Color temperature encoding | Known: `cct` in kelvin |
 | P-10 | Fade encoding | Known: `fade` in milliseconds |
 | P-11 | Zones | One zone (250) seen. How membership is read is unknown |
 | P-12 | Client and rate limits | Unknown |
-| P-13 | Status of non-lighting devices | The PowerPlane, the PDM and the controller send heartbeats. Switches and sockets do not; switches appear only in zone events |
-| P-14 | Firmware version | Known from the heartbeat (`swv`, `hwv`) for the PowerPlane and the PDM. Not available for switches or cards |
-| P-15 | What GID 100 is, and the fields `opc`, `mode`, `12v`, `term`, `txrx`. It also accepted `e:57` (section 6) | Unknown. New; not yet in the plan's register |
+| P-13 | Status of non-lighting devices | The PowerPlane, the PDM, controller nodes and a wall switch send heartbeats; the switch only rarely. No socket or card heartbeat seen. Switch presses also appear in zone events |
+| P-14 | Firmware version | Known from the heartbeat (`swv`, `hwv`) for the PowerPlane and the PDM, and from the config reply for a wall switch. Not seen for cards |
+| P-15 | What GIDs 100, 101 and 0 are, and the fields `opc`, `mode`, `12v`, `term`, `txrx`. GID 100 also accepted `e:57` (section 6) | Unknown. New; not yet in the plan's register |
 | P-16 | Why the PowerPlane restarted by itself about 4 h after the reboot, without the PDM (section 5.1) | Unknown. New; not yet in the plan's register |
 | P-17 | What the empty message on `cmd` means | Unknown. New; not yet in the plan's register |
 | P-18 | What `b` and `pc` mean in `e:137`, and whether the device it reported is unassigned | Unknown. New; not yet in the plan's register |
-| P-19 | Effect of `e:56` on a zone, and of `bri` outside 0 to 100 | Not reported. New; not yet in the plan's register |
+| P-19 | Effect of `bri` outside 0 to 100 | Not reported (`e:56` on a zone works). New; not yet in the plan's register |
+| P-20 | Why `e:15` with `c:0` did not reboot the PDM or the PowerPlane | Unknown: ignored, or another parameter is needed. Effect on a card not reported. New; not yet in the plan's register |
 
 ## 9. What the integration depends on
 
 - **Inventory after startup.** A reboot republishes it, but nothing is retained, so when Home Assistant starts while the system is already connected, it receives no inventory. The integration needs a way to make the system republish it (P-6), or it must wait until the system next reconnects.
 - **Stable IDs.** `hsn` for devices and `sys` for the system.
-- **Liveness.** The PDM's 60 s heartbeat. The PowerPlane sends every 5 min and the controller only after boot and light commands (section 5.1). 🔬 The number of missed beats before marking entities unavailable still has to be chosen.
+- **Liveness.** The PDM's 60 s heartbeat. The PowerPlane sends every 5 min and the controller only after boot and light commands; a wall switch only rarely (section 5.1). 🔬 The number of missed beats before marking entities unavailable still has to be chosen.
 - **State.** Zone events are the only state seen so far. Per-fixture state needs zone membership (`e:49`) and may need other messages.
 
 ## 10. Updating this document
