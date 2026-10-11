@@ -1,0 +1,15 @@
+{"topic": "dev/sw:13", "payload": {"gid": 13, "hsn": "HSN0003", "name": "SW-D", "cat": 40, "parent": 0, "time": 5928}}
+{"topic": "dev/sw:12", "payload": {"gid": 12, "hsn": "HSN0004", "name": "SW-D", "cat": 40, "parent": 0, "time": 1112825}}
+{"topic": "dev/scard:11", "payload": {"gid": 11, "hsn": "HSN0005", "name": "SC-CC2-50W", "cat": 37, "parent": 0, "time": 5023}}
+{"topic": "dev/pp:1", "payload": {"gid": 1, "name": "Reneta PP", "cat": 32, "parent": 65535, "time": 688}}
+{"topic": "dev/pp:1/pdm:2", "payload": {"gid": 2, "hsn": "HSN0001", "name": "PDM_RJ", "cat": 35, "parent": 1, "time": 1501188}}
+{"topic": "dev/pp:1/pdm:2/skt:3", "payload": {"gid": 3, "hsn": "HSN0001_S1", "name": "Socket_1", "cat": 36, "parent": 2, "time": 4287}}
+{"topic": "dev/pp:1/pdm:2/skt:4", "payload": {"gid": 4, "hsn": "HSN0001_S2", "name": "Socket_2", "cat": 36, "parent": 2, "time": 4410}}
+{"topic": "dev/pp:1/pdm:2/skt:5", "payload": {"gid": 5, "hsn": "HSN0001_S3", "name": "Socket_3", "cat": 36, "parent": 2, "time": 4549}}
+{"topic": "dev/pp:1/pdm:2/skt:6", "payload": {"gid": 6, "hsn": "HSN0001_S4", "name": "Socket_4", "cat": 36, "parent": 2, "time": 4687}}
+{"topic": "dev/pp:1/pdm:2/skt:7", "payload": {"gid": 7, "hsn": "HSN0001_S5", "name": "Socket_5", "cat": 36, "parent": 2, "time": 4804}}
+{"topic": "dev/pp:1/pdm:2/skt:8", "payload": {"gid": 8, "hsn": "HSN0001_S6", "name": "Socket_6", "cat": 36, "parent": 2, "time": 4878}}
+{"topic": "dev/pp:1/pdm:2/skt:9", "payload": {"gid": 9, "hsn": "HSN0001_S7", "name": "Socket_7", "cat": 36, "parent": 2, "time": 4952}}
+{"topic": "dev/pp:1/pdm:2/skt:10", "payload": {"gid": 10, "hsn": "HSN0001_S8", "name": "Socket_8", "cat": 36, "parent": 2, "time": 5026}}
+{"topic": "dev/pp:1/pdm:2/skt:4/scard:14", "payload": {"gid": 14, "hsn": "HSN0006", "name": "SC-CC2-50W", "cat": 37, "parent": 4, "time": 1505366}}
+{"topic": "dev/pp:1/pdm:2/skt:6/scard:15", "payload": {"gid": 15, "hsn": "HSN0007", "name": "SC-PV2-50W", "cat": 37, "parent": 6, "time": 1505519}}

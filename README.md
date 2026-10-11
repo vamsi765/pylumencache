@@ -14,6 +14,7 @@ Unofficial Python library for [LumenCache](https://www.lumencache.com) ReNetA li
 | `docs/protocol.md` | Prose notes and open questions. Its code tables are generated from the YAML |
 | `src/pylumencache/` | The library. `protocol/` has `codes.py` (the `Code` enum), `commands.py` (one builder per documented command, such as `zone_control(zone_id=250, brightness=50)`) and `models.py` (a dataclass per received message), all generated from the YAML, and `parser.py` (`parse(topic, payload)` returns a typed message, or an `UnknownMessage` for anything unrecognised) |
 | `src/pylumencache/client.py` | Async MQTT client: connects over TLS, keeps the connection up, delivers parsed messages to listeners and publishes commands |
+| `src/pylumencache/inventory.py` | `SystemModel`: the device tree from `dev/...` announcements, heartbeats, and the last known state of zones and lights (from switch events and echoed commands). Saves to and loads from JSON, because the system does not retain its inventory |
 | `tools/watch.py` | Live check of the client: prints every parsed message |
 | `tools/gen_protocol.py` | Regenerates the tables in `protocol.md` and `codes.py`, `commands.py` and `models.py`; `--check` fails when either is stale |
 | `tools/lumencache_capture.py` | Records and sends MQTT traffic |
