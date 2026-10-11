@@ -31,7 +31,7 @@ Integration = "https://github.com/vamsi765/ha-lumencache"
 
 [project.optional-dependencies]
 capture = ["paho-mqtt"]
-dev = ["pyyaml", "jsonschema", "paho-mqtt", "pytest", "ruff", "mypy", "types-PyYAML"]
+dev = ["pyyaml", "jsonschema", "paho-mqtt", "pytest", "ruff", "mypy", "types-PyYAML", "import-linter"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/pylumencache"]
@@ -48,9 +48,45 @@ extend-exclude = ["capture*.jsonl"]
 select = ["E", "F", "W", "I", "UP", "B"]
 
 [tool.ruff.lint.per-file-ignores]
-"src/pylumencache/protocol/commands.py" = ["E501"]   # generated
-"src/pylumencache/protocol/models.py" = ["E501"]     # generated
+"src/pylumencache/transports/mqtt/wire/commands.py" = ["E501"]   # generated
+"src/pylumencache/transports/mqtt/wire/models.py" = ["E501"]     # generated
 
 [tool.mypy]
 strict = true
 files = ["src"]
+
+[tool.importlinter]
+root_package = "pylumencache"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "Layers: a module may import only from the layers below it"
+type = "layers"
+layers = [
+    "pylumencache.api",
+    "pylumencache.transports",
+    "pylumencache.transport",
+    "pylumencache.domain",
+]
+
+[[tool.importlinter.contracts]]
+name = "Only the MQTT transport touches aiomqtt"
+type = "forbidden"
+source_modules = ["pylumencache.api", "pylumencache.transport", "pylumencache.domain"]
+forbidden_modules = ["aiomqtt"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "MQTT transport: client above adapter above wire format"
+type = "layers"
+layers = [
+    "pylumencache.transports.mqtt.client",
+    "pylumencache.transports.mqtt.adapter",
+    "pylumencache.transports.mqtt.wire",
+]
+
+[[tool.importlinter.contracts]]
+name = "The fallback transport does not depend on any particular transport"
+type = "forbidden"
+source_modules = ["pylumencache.transports.fallback"]
+forbidden_modules = ["pylumencache.transports.mqtt"]

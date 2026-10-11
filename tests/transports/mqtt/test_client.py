@@ -5,9 +5,12 @@ from types import SimpleNamespace
 import aiomqtt
 import pytest
 
-from pylumencache.client import LumenCacheClient, NotConnectedError
-from pylumencache.protocol import commands
-from pylumencache.protocol.parser import CommandEcho, Empty, ErrorReport, ZoneEvent
+from pylumencache.domain.commands import SetLight
+from pylumencache.domain.events import LightChanged
+from pylumencache.transport import NotConnectedError
+from pylumencache.transports.mqtt import MqttTransport
+from pylumencache.transports.mqtt.wire import commands
+from pylumencache.transports.mqtt.wire.parser import CommandEcho, Empty, ErrorReport, ZoneEvent
 
 PREFIX = "platform:na/example"
 
@@ -54,7 +57,7 @@ class FakeConnection:
 def make_client(*connections):
     """A client that hands out the given fake connections in order."""
     queue = list(connections)
-    return LumenCacheClient("broker", PREFIX + "/", reconnect_delays=(0.01,), client_factory=lambda: queue.pop(0))
+    return MqttTransport("broker", PREFIX + "/", reconnect_delays=(0.01,), client_factory=lambda: queue.pop(0))
 
 
 def run(coro_fn):
@@ -65,7 +68,7 @@ def test_subscribes_to_the_prefix_and_delivers_parsed_messages():
     async def scenario():
         conn = FakeConnection()
         client, got = make_client(conn), []
-        client.add_listener(got.append)
+        client.add_message_listener(got.append)
         await client.start()
         await client.wait_connected(1)
         conn.put(f"{PREFIX}/status", b'{"e":56,"z":250,"on":0,"dev":12,"g":65534}')
@@ -85,7 +88,7 @@ def test_send_publishes_compact_json_to_cmd():
         client = make_client(conn)
         await client.start()
         await client.wait_connected(1)
-        await client.send(commands.zone_control(zone_id=250, brightness=50, fade=800))
+        await client.send_raw(commands.zone_control(zone_id=250, brightness=50, fade=800))
         await client.stop()
         topic, payload = conn.published[0]
         assert topic == f"{PREFIX}/cmd"
@@ -96,7 +99,7 @@ def test_send_publishes_compact_json_to_cmd():
 def test_send_when_not_connected_is_refused():
     async def scenario():
         with pytest.raises(NotConnectedError):
-            await make_client().send({"e": 8})
+            await make_client().send_raw({"e": 8})
     run(scenario)
 
 
@@ -105,7 +108,7 @@ def test_reconnects_after_the_connection_drops():
         first, second = FakeConnection(), FakeConnection()
         client, states, got = make_client(first, second), [], []
         client.add_connection_listener(states.append)
-        client.add_listener(got.append)
+        client.add_message_listener(got.append)
         await client.start()
         await client.wait_connected(1)
         first.drop()
@@ -142,9 +145,9 @@ def test_listener_errors_do_not_stop_delivery():
         async def async_listener(message):
             got.append(("async", message))
 
-        client.add_listener(broken)
-        client.add_listener(async_listener)
-        client.add_listener(lambda m: got.append(("sync", m)))
+        client.add_message_listener(broken)
+        client.add_message_listener(async_listener)
+        client.add_message_listener(lambda m: got.append(("sync", m)))
         await client.start()
         await client.wait_connected(1)
         conn.put(f"{PREFIX}/cmd", b"")
@@ -160,7 +163,7 @@ def test_messages_outside_the_prefix_are_ignored_and_listeners_can_be_removed():
     async def scenario():
         conn = FakeConnection()
         client, got = make_client(conn), []
-        remove = client.add_listener(got.append)
+        remove = client.add_message_listener(got.append)
         await client.start()
         await client.wait_connected(1)
         conn.put("other/status", b'{"e":254}')
@@ -181,8 +184,26 @@ def test_default_connection_uses_tls(verify):
     import ssl
 
     async def scenario():
-        client = LumenCacheClient("broker", PREFIX, username="u", password="p", verify_tls=verify)
+        client = MqttTransport("broker", PREFIX, username="u", password="p", verify_tls=verify)
         conn = client._default_factory()   # built, not connected
         assert isinstance(conn, aiomqtt.Client)
         assert conn._client._ssl_context.verify_mode == (ssl.CERT_REQUIRED if verify else ssl.CERT_NONE)
+    run(scenario)
+
+
+def test_listeners_receive_domain_events_and_send_takes_domain_commands():
+    async def scenario():
+        conn = FakeConnection()
+        client, events = make_client(conn), []
+        client.add_listener(events.append)
+        await client.start()
+        await client.wait_connected(1)
+        conn.put(f"{PREFIX}/status", b'{"e":56,"z":250,"on":1,"bri":40,"dev":12,"g":65534}')
+        conn.put(f"{PREFIX}/cmd", b"")   # carries nothing for the model
+        await client.send(SetLight("zone", 250, brightness=50, fade=800))
+        while not events:
+            await asyncio.sleep(0.01)
+        await client.stop()
+        assert events == [LightChanged("zone", 250, True, 40, None, None, "event")]
+        assert conn.published == [(f"{PREFIX}/cmd", '{"e":56,"z":250,"bri":50,"fade":800}')]
     run(scenario)

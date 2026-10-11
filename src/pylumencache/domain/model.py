@@ -1,14 +1,14 @@
-"""What is in the system and what state it is in, built from received messages.
+"""What is in the system and what state it is in, built from domain events.
 
 The system does not report the state of a light when asked, and it does not keep its
 inventory on the broker (nothing is retained). So the model learns from what passes by:
 
-* devices come from `dev/...` announcements, which the system publishes once after it
-  connects. Use to_dict()/from_dict() to keep them across restarts;
-* a zone or light changes state when a wall switch reports it (ZoneEvent) or when any
-  client, including this one, publishes a control command (the broker echoes it back).
-  Those states are the commands as sent. The system does not confirm that they happened;
-* heartbeats show which devices are alive.
+* devices come from announcements, which the system publishes once after it connects.
+  Use to_dict()/from_dict() to keep them across restarts;
+* a zone or light changes state when a wall switch reports it or when any client,
+  including this one, sends a control command that the transport sees. Those states are
+  the commands as sent. The system does not confirm that they happened;
+* signs of life show which devices are alive.
 
 Fixtures that belong to a zone are not updated when the zone changes, because the
 membership of a zone cannot be read from the system.
@@ -20,22 +20,15 @@ import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from enum import IntEnum
-from typing import TYPE_CHECKING, Any
+from typing import Any, Protocol
 
-from .protocol.codes import Code
-from .protocol.models import (
-    ControllerHeartbeat,
-    PdmHeartbeat,
-    PowerPlaneHeartbeat,
-    SwitchHeartbeat,
-    ZoneEvent,
-)
-from .protocol.parser import CommandEcho, DeviceAnnouncementAt, Heartbeat, Message
-
-if TYPE_CHECKING:
-    from .client import LumenCacheClient
+from .events import DeviceAnnounced, DeviceSeen, Event, LightChanged
 
 _LOGGER = logging.getLogger(__name__)
+
+
+class EventSource(Protocol):
+    def add_listener(self, callback: Callable[[Event], Any]) -> Callable[[], None]: ...
 
 NO_PARENT = 65535
 
@@ -77,12 +70,12 @@ class LightState:
     brightness: float | None = None    # percent, 0 to 100
     color_temperature: int | None = None   # kelvin
     fade: int | None = None   # ms, from the last command
-    source: str = "unknown"   # "event" (reported by a switch) or "command" (as sent, not confirmed)
+    source: str = "unknown"   # "event" (reported by the system) or "command" (as sent, not confirmed)
 
 
 @dataclass(frozen=True)
 class Change:
-    """Passed to listeners. `kind` is "device", "zone", "fixture" or "heartbeat"; `key` is the id."""
+    """Passed to listeners. `kind` is "device", "zone", "fixture" or "seen"; `key` is the id."""
 
     kind: str
     key: int
@@ -93,8 +86,7 @@ class SystemModel:
     devices: dict[int, Device] = field(default_factory=dict)
     zones: dict[int, LightState] = field(default_factory=dict)
     fixtures: dict[int, LightState] = field(default_factory=dict)
-    heartbeats: dict[int, Heartbeat] = field(default_factory=dict)   # GID -> latest heartbeat message
-    heartbeat_times: dict[int, float] = field(default_factory=dict)   # GID -> time.monotonic()
+    last_seen: dict[int, float] = field(default_factory=dict)   # GID -> time.monotonic() of the last sign of life
     _listeners: list[Callable[[Change], Any]] = field(default_factory=list, repr=False)
 
     # --- reading -----------------------------------------------------------
@@ -102,8 +94,8 @@ class SystemModel:
     def children(self, gid: int) -> list[Device]:
         return [d for d in self.devices.values() if d.parent == gid]
 
-    def seconds_since_heartbeat(self, gid: int) -> float | None:
-        seen = self.heartbeat_times.get(gid)
+    def seconds_since_seen(self, gid: int) -> float | None:
+        seen = self.last_seen.get(gid)
         return None if seen is None else time.monotonic() - seen
 
     # --- updating ----------------------------------------------------------
@@ -112,22 +104,20 @@ class SystemModel:
         self._listeners.append(callback)
         return lambda: self._listeners.remove(callback)
 
-    def attach(self, client: LumenCacheClient) -> Callable[[], None]:
-        """Feed the model from a LumenCacheClient. Returns a function that detaches it."""
-        return client.add_listener(self.apply)
+    def attach(self, source: EventSource) -> Callable[[], None]:
+        """Feed the model from anything with `add_listener(callback)`, such as a Transport."""
+        return source.add_listener(self.apply)
 
-    def apply(self, message: Message) -> None:
-        """Update from one parsed message. Messages that carry nothing for the model are ignored."""
-        if isinstance(message, DeviceAnnouncementAt):
-            self._device(message)
-        elif isinstance(message, (PowerPlaneHeartbeat, PdmHeartbeat, ControllerHeartbeat, SwitchHeartbeat)):
-            self._heartbeat(message)
-        elif isinstance(message, ZoneEvent) and message.z is not None:
-            self._set_state(self.zones, "zone", message.z, LightState(
-                on=bool(message.on) if message.on is not None else None,
-                brightness=message.bri, color_temperature=message.cct, source="event"))
-        elif isinstance(message, CommandEcho):
-            self._command(message.payload)
+    def apply(self, event: Event) -> None:
+        """Update from one event."""
+        if isinstance(event, DeviceAnnounced):
+            self._device(event)
+        elif isinstance(event, DeviceSeen):
+            self._seen(event)
+        elif isinstance(event, LightChanged):
+            table = self.zones if event.kind == "zone" else self.fixtures
+            self._set_state(table, event.kind, event.key, LightState(
+                event.on, event.brightness, event.color_temperature, event.fade, event.source))
 
     def _notify(self, kind: str, key: int) -> None:
         for callback in list(self._listeners):
@@ -136,37 +126,22 @@ class SystemModel:
             except Exception:   # a listener must not break the model
                 _LOGGER.exception("A model listener raised an exception")
 
-    def _device(self, message: DeviceAnnouncementAt) -> None:
-        d = message.device
-        known = self.devices.get(d.gid)
-        device = Device(d.gid, message.path, d.name, d.hsn or (known.hsn if known else None), d.cat, d.parent)
+    def _device(self, event: DeviceAnnounced) -> None:
+        known = self.devices.get(event.gid)
+        hsn = event.hsn or (known.hsn if known else None)
+        device = Device(event.gid, event.path, event.name, hsn, event.category, event.parent)
         if device != known:
-            self.devices[d.gid] = device
-            self._notify("device", d.gid)
+            self.devices[event.gid] = device
+            self._notify("device", event.gid)
 
-    def _heartbeat(self, hb: Heartbeat) -> None:
-        self.heartbeats[hb.g] = hb
-        self.heartbeat_times[hb.g] = time.monotonic()
-        device = self.devices.get(hb.g)
-        serial = getattr(hb, "hsn", None)
-        if device and serial and not device.hsn:   # the PowerPlane's announcement has no serial
-            self.devices[hb.g] = Device(device.gid, device.path, device.name, serial, device.category, device.parent)
-            self._notify("device", hb.g)
-        self._notify("heartbeat", hb.g)
-
-    def _command(self, cmd: dict[str, Any]) -> None:
-        code = cmd.get("e")
-        if code not in (Code.ZONE_CONTROL, Code.DIRECT_CONTROL):
-            return
-        bri = cmd.get("bri")
-        state = LightState(on=None if bri is None else bri > 0, brightness=bri,
-                           color_temperature=cmd.get("cct"), fade=cmd.get("fade"), source="command")
-        if state == LightState(source="command"):
-            return   # nothing to learn from a command that sets nothing
-        if cmd.get("z") is not None:
-            self._set_state(self.zones, "zone", cmd["z"], state)
-        elif code == Code.DIRECT_CONTROL and cmd.get("g") is not None:
-            self._set_state(self.fixtures, "fixture", cmd["g"], state)
+    def _seen(self, event: DeviceSeen) -> None:
+        self.last_seen[event.gid] = time.monotonic()
+        device = self.devices.get(event.gid)
+        if device and event.hsn and not device.hsn:   # the PowerPlane's announcement has no serial
+            self.devices[event.gid] = Device(
+                device.gid, device.path, device.name, event.hsn, device.category, device.parent)
+            self._notify("device", event.gid)
+        self._notify("seen", event.gid)
 
     def _set_state(self, table: dict[int, LightState], kind: str, key: int, new: LightState) -> None:
         """Merge `new` into the stored state: fields the message did not carry keep their value."""

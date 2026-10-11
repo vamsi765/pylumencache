@@ -3,13 +3,13 @@ import asyncio
 import json
 from pathlib import Path
 
-from pylumencache.client import LumenCacheClient
-from pylumencache.fake import FakeController
-from pylumencache.inventory import SystemModel
-from pylumencache.protocol import commands
-from pylumencache.protocol.parser import CommandEcho, Empty, HailReply, SwitchConfig, UnknownMessage
+from pylumencache.domain.model import SystemModel
+from pylumencache.transports.mqtt import MqttTransport
+from pylumencache.transports.mqtt.fake import FakeController
+from pylumencache.transports.mqtt.wire import commands
+from pylumencache.transports.mqtt.wire.parser import CommandEcho, Empty, HailReply, SwitchConfig, UnknownMessage
 
-FIXTURES = Path(__file__).parent / "fixtures"
+FIXTURES = Path(__file__).parents[2] / "fixtures"
 RECORDS = [json.loads(line) for name in ("inventory.jsonl", "messages.jsonl")
            for line in (FIXTURES / name).read_text().splitlines()]
 
@@ -19,8 +19,8 @@ def run(coro_fn):
 
 
 async def started(controller):
-    client, got = LumenCacheClient("fake", "p", client_factory=controller.factory), []
-    client.add_listener(got.append)
+    client, got = MqttTransport("fake", "p", client_factory=controller.factory), []
+    client.add_message_listener(got.append)
     await client.start()
     await client.wait_connected(1)
     return client, got
@@ -37,7 +37,7 @@ def test_replays_the_recorded_system_into_a_model():
         client, got = await started(controller)
         model = SystemModel()
         model.attach(client)
-        await until(lambda: len(model.devices) == 15 and {1, 2, 100, 12} <= set(model.heartbeats))
+        await until(lambda: len(model.devices) == 15 and {1, 2, 100, 12} <= set(model.last_seen))
         await client.stop()
         assert not any(isinstance(m, UnknownMessage) for m in got)
         assert model.zones[250].source == "event"
@@ -47,7 +47,7 @@ def test_replays_the_recorded_system_into_a_model():
 def test_a_command_is_echoed_and_answered_with_an_empty_reply():
     async def scenario():
         client, got = await started(FakeController(RECORDS, "p"))
-        await client.send(commands.zone_control(zone_id=250, brightness=40))
+        await client.send_raw(commands.zone_control(zone_id=250, brightness=40))
         await until(lambda: any(isinstance(m, CommandEcho) for m in got) and any(isinstance(m, Empty) for m in got))
         await client.stop()
         echo = next(m for m in got if isinstance(m, CommandEcho))
@@ -60,7 +60,7 @@ def test_the_model_follows_commands_sent_through_the_fake():
         client, _ = await started(FakeController(RECORDS, "p"))
         model = SystemModel()
         model.attach(client)
-        await client.send(commands.direct_control(gid=14, brightness=30, color_temperature=3000))
+        await client.send_raw(commands.direct_control(gid=14, brightness=30, color_temperature=3000))
         await until(lambda: 14 in model.fixtures)
         await client.stop()
         assert (model.fixtures[14].brightness, model.fixtures[14].color_temperature) == (30, 3000)
@@ -70,8 +70,8 @@ def test_the_model_follows_commands_sent_through_the_fake():
 def test_hail_and_config_get_the_recorded_answers():
     async def scenario():
         client, got = await started(FakeController(RECORDS, "p"))
-        await client.send(commands.hail(gid=0))
-        await client.send(commands.config(gid=12))
+        await client.send_raw(commands.hail(gid=0))
+        await client.send_raw(commands.config(gid=12))
         await until(lambda: {HailReply, SwitchConfig} <= {type(m) for m in got})
         await client.stop()
     run(scenario)

@@ -19,6 +19,8 @@ jobs:
       - run: pip install -e ".[dev]"
       - run: ruff check .
       - run: mypy
+      - name: Layers respect their import boundaries
+        run: lint-imports
       - name: Generated files are up to date and the spec is valid
         run: python tools/gen_protocol.py --check
       - run: pytest

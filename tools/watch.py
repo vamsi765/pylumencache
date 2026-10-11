@@ -16,10 +16,10 @@ import dataclasses
 import logging
 import os
 
-from pylumencache.client import LumenCacheClient
-from pylumencache.fake import FakeController
 from pylumencache.obfuscate import Obfuscator
-from pylumencache.protocol import commands
+from pylumencache.transports.mqtt import MqttTransport
+from pylumencache.transports.mqtt.fake import FakeController
+from pylumencache.transports.mqtt.wire import commands
 
 
 async def main() -> None:
@@ -40,14 +40,14 @@ async def main() -> None:
     args.prefix = "replay" if args.replay else os.environ.get("LC_TOPIC_PREFIX", "")
     if args.replay:
         controller = FakeController.from_file(args.replay, "replay")
-        client = LumenCacheClient("replay", "replay", client_factory=controller.factory)
+        client = MqttTransport("replay", "replay", client_factory=controller.factory)
     else:
         client = real_client(args)
     return await run(client, args)
 
 
-def real_client(args: argparse.Namespace) -> LumenCacheClient:
-    return LumenCacheClient(
+def real_client(args: argparse.Namespace) -> MqttTransport:
+    return MqttTransport(
         os.environ["LC_HOST"],
         os.environ["LC_TOPIC_PREFIX"],
         port=int(os.environ.get("LC_PORT", 8883)),
@@ -70,13 +70,13 @@ def printer(prefix: str, obfuscate: bool):
     return show
 
 
-async def run(client: LumenCacheClient, args: argparse.Namespace) -> None:
-    client.add_listener(printer(args.prefix, not args.no_obfuscate))
+async def run(client: MqttTransport, args: argparse.Namespace) -> None:
+    client.add_message_listener(printer(args.prefix, not args.no_obfuscate))
     client.add_connection_listener(lambda up: print("connected" if up else "disconnected"))
     await client.start()
     await client.wait_connected(30)
     if args.hail:
-        await client.send(commands.hail(gid=0))
+        await client.send_raw(commands.hail(gid=0))
     try:
         if args.duration:
             await asyncio.sleep(args.duration)

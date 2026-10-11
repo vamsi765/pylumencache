@@ -5,12 +5,12 @@ from pathlib import Path
 import pytest
 import yaml
 
-from pylumencache.protocol import parser
-from pylumencache.protocol.parser import parse
+from pylumencache.transports.mqtt.wire import parser
+from pylumencache.transports.mqtt.wire.parser import parse
 
-ROOT = Path(__file__).parent.parent
+ROOT = Path(__file__).parents[3]
 SPEC = yaml.safe_load((ROOT / "docs" / "asyncapi.yaml").read_text(encoding="utf-8"))
-FIXTURE_FILE = Path(__file__).parent / "fixtures" / "messages.jsonl"
+FIXTURE_FILE = Path(__file__).parents[2] / "fixtures" / "messages.jsonl"
 FIXTURES = [json.loads(line) for line in FIXTURE_FILE.read_text().splitlines()]
 
 # Where each received message is published, and the class the parser should give it.

@@ -1,11 +1,11 @@
 """A fake ReNetA system for development and tests: replays recorded traffic.
 
-FakeController stands in for the broker connection of LumenCacheClient, so the whole
+FakeController stands in for the broker connection of MqttTransport, so the whole
 stack (client, parser, model, and an integration on top) can run without a system or
 a network, and without touching real lights::
 
     controller = FakeController.from_file("capture.jsonl", prefix)
-    client = LumenCacheClient("fake", prefix, client_factory=controller.factory)
+    transport = MqttTransport("fake", prefix, client_factory=controller.factory)
 
 It replays the recorded inventory and status messages when the client subscribes. A
 command published to `cmd` is echoed back followed by an empty reply, as the real system
@@ -21,7 +21,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from .protocol.codes import Code
+from .wire.codes import Code
 
 
 class FakeController:
@@ -40,10 +40,10 @@ class FakeController:
         return cls((json.loads(line) for line in lines if line.strip()), prefix)
 
     def factory(self) -> FakeController:
-        """For LumenCacheClient(client_factory=...): a new connection that replays the same records."""
+        """For MqttTransport(client_factory=...): a new connection that replays the same records."""
         return FakeController(self._records, self.prefix)
 
-    # --- what LumenCacheClient uses of aiomqtt.Client ------------------------------
+    # --- what MqttTransport uses of aiomqtt.Client ------------------------------
 
     async def __aenter__(self) -> FakeController:
         return self

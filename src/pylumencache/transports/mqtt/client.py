@@ -1,9 +1,10 @@
-"""Asynchronous MQTT client for a ReNetA system.
+"""MQTT transport for a ReNetA system.
 
 Connects to the hosted broker over TLS (MQTT 5), subscribes to everything under the
 Prefix Topic, turns each received message into a typed object with the parser, and
-hands it to the registered listeners. Commands are published to `<prefix>/cmd`.
-The connection is kept up: if it drops, the client reconnects with a growing delay.
+hands the domain events it carries to the registered listeners. Commands are published
+to `<prefix>/cmd`. The connection is kept up: if it drops, the transport reconnects
+with a growing delay.
 """
 from __future__ import annotations
 
@@ -16,7 +17,11 @@ from typing import Any
 
 import aiomqtt
 
-from .protocol.parser import Message, parse, relative_topic
+from ...domain.commands import Command
+from ...domain.events import Event
+from ...transport import NotConnectedError
+from .adapter import to_events, to_message
+from .wire.parser import Message, parse, relative_topic
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -24,22 +29,18 @@ DEFAULT_PORT = 8883
 RECONNECT_DELAYS = (1, 2, 5, 10, 30, 60)   # seconds; the last one repeats
 
 
-class NotConnectedError(ConnectionError):
-    """A command was sent while the client was not connected."""
-
-
-class LumenCacheClient:
-    """One connection to one ReNetA system.
+class MqttTransport:
+    """One MQTT connection to one ReNetA system. Implements pylumencache.transport.Transport.
 
     Typical use::
 
-        client = LumenCacheClient("broker.example.com", "<Prefix Topic>", username=..., password=...)
-        client.add_listener(on_message)      # called with each parsed message
-        await client.start()
-        await client.wait_connected()
-        await client.send(commands.zone_control(zone_id=250, brightness=50))
+        transport = MqttTransport("broker.example.com", "<Prefix Topic>", username=..., password=...)
+        transport.add_listener(on_event)     # called with each domain event
+        await transport.start()
+        await transport.wait_connected()
+        await transport.send(SetLight("zone", 250, brightness=50))
         ...
-        await client.stop()
+        await transport.stop()
     """
 
     def __init__(
@@ -62,7 +63,8 @@ class LumenCacheClient:
         self._client: Any = None
         self._task: asyncio.Task[None] | None = None
         self._connected = asyncio.Event()
-        self._listeners: list[Callable[[Message], Any]] = []
+        self._listeners: list[Callable[[Event], Any]] = []
+        self._message_listeners: list[Callable[[Message], Any]] = []
         self._connection_listeners: list[Callable[[bool], Any]] = []
         self._pending: set[asyncio.Future[Any]] = set()   # async listeners still running
 
@@ -72,10 +74,15 @@ class LumenCacheClient:
     def connected(self) -> bool:
         return self._connected.is_set()
 
-    def add_listener(self, callback: Callable[[Message], Any]) -> Callable[[], None]:
-        """Call `callback(message)` for every received message. Returns a function that removes it."""
+    def add_listener(self, callback: Callable[[Event], Any]) -> Callable[[], None]:
+        """Call `callback(event)` for every domain event received. Returns a function that removes it."""
         self._listeners.append(callback)
         return lambda: self._listeners.remove(callback)
+
+    def add_message_listener(self, callback: Callable[[Message], Any]) -> Callable[[], None]:
+        """Call `callback(message)` for every received message, parsed but not interpreted (MQTT only)."""
+        self._message_listeners.append(callback)
+        return lambda: self._message_listeners.remove(callback)
 
     def add_connection_listener(self, callback: Callable[[bool], Any]) -> Callable[[], None]:
         """Call `callback(True)` when connected and `callback(False)` when the connection is lost."""
@@ -97,8 +104,12 @@ class LumenCacheClient:
     async def wait_connected(self, timeout: float | None = None) -> None:
         await asyncio.wait_for(self._connected.wait(), timeout)
 
-    async def send(self, message: dict[str, Any]) -> None:
-        """Publish a command (for example from pylumencache.protocol.commands) to `<prefix>/cmd`."""
+    async def send(self, command: Command) -> None:
+        """Publish a domain command to `<prefix>/cmd`."""
+        await self.send_raw(to_message(command))
+
+    async def send_raw(self, message: dict[str, Any]) -> None:
+        """Publish any command (for example from wire.commands) to `<prefix>/cmd` (MQTT only)."""
         if self._client is None:
             raise NotConnectedError("not connected to the broker")
         await self._client.publish(f"{self._prefix}/cmd", json.dumps(message, separators=(",", ":")))
@@ -165,8 +176,11 @@ class LumenCacheClient:
             return
         message = parse(relative, payload)
         _LOGGER.debug("Received %s on %s", type(message).__name__, relative)
-        for callback in list(self._listeners):
-            self._call(callback, message)
+        for message_callback in list(self._message_listeners):
+            self._call(message_callback, message)
+        for event in to_events(message):
+            for callback in list(self._listeners):
+                self._call(callback, event)
 
     def _call(self, callback: Callable[..., Any], *args: Any) -> None:
         """Run a listener; one that fails must not stop the others or the connection."""

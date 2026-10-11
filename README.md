@@ -12,10 +12,11 @@ Unofficial Python library for [LumenCache](https://www.lumencache.com) ReNetA li
 |---|---|
 | `docs/asyncapi.yaml` | The protocol, as an AsyncAPI 3.0 description. The single source of truth for message codes and payloads |
 | `docs/protocol.md` | Prose notes and open questions. Its code tables are generated from the YAML |
-| `src/pylumencache/` | The library. `protocol/` has `codes.py` (the `Code` enum), `commands.py` (one builder per documented command, such as `zone_control(zone_id=250, brightness=50)`) and `models.py` (a dataclass per received message), all generated from the YAML, and `parser.py` (`parse(topic, payload)` returns a typed message, or an `UnknownMessage` for anything unrecognised) |
-| `src/pylumencache/client.py` | Async MQTT client: connects over TLS, keeps the connection up, delivers parsed messages to listeners and publishes commands |
-| `src/pylumencache/inventory.py` | `SystemModel`: the device tree from `dev/...` announcements, heartbeats, and the last known state of zones and lights (from switch events and echoed commands). Saves to and loads from JSON, because the system does not retain its inventory |
-| `src/pylumencache/fake.py` | `FakeController`: a fake ReNetA system that replays a capture, for developing and testing without lights (pass `controller.factory` as the client's `client_factory`) |
+| `src/pylumencache/api.py` | `LumenCache`: the public entry point. Owns a `SystemModel`, keeps it fed from a transport, and sends commands. Use `LumenCache.mqtt(...)` for the hosted broker |
+| `src/pylumencache/domain/` | What the library is about, with no wire format in it: `model.py` (`SystemModel`: devices, and the last known state of zones and lights; saves to and loads from JSON, because the system does not retain its inventory), `events.py` (`DeviceAnnounced`, `DeviceSeen`, `LightChanged`) and `commands.py` (`SetLight`) |
+| `src/pylumencache/transport.py` | The `Transport` interface: what a way of reaching a system must provide (start, stop, connection state, domain events in, domain commands out) |
+| `src/pylumencache/transports/mqtt/` | The MQTT transport. `client.py` (`MqttTransport`: TLS, reconnects, publishes to `cmd`), `adapter.py` (messages to domain events, domain commands to messages), `fake.py` (`FakeController`: a fake ReNetA system that replays a capture, for developing and testing without lights; pass `controller.factory` as `client_factory`) |
+| `src/pylumencache/transports/mqtt/wire/` | The MQTT wire format: `codes.py` (the `Code` enum), `commands.py` (one builder per documented command, such as `zone_control(zone_id=250, brightness=50)`) and `models.py` (a dataclass per received message), all generated from the YAML, and `parser.py` (`parse(topic, payload)` returns a typed message, or an `UnknownMessage` for anything unrecognised) |
 | `src/pylumencache/obfuscate.py` | `Obfuscator`: replaces ids, serials, free text and MACs with stable fakes. Used by the capture tool for its files and by `watch.py` for the screen |
 | `tools/watch.py` | Prints every parsed message, from a real system or, with `--replay FILE`, from a capture. Ids are replaced with fakes unless `--no-obfuscate` |
 | `tools/gen_protocol.py` | Regenerates the tables in `protocol.md` and `codes.py`, `commands.py` and `models.py`; `--check` fails when either is stale |
@@ -28,29 +29,58 @@ python3 -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 python3 tools/gen_protocol.py --check
-ruff check . && mypy && pytest   # what CI runs
+ruff check . && mypy && lint-imports && pytest   # what CI runs
 ```
 
-## Using the client
+## Layers
+
+```
+api.py                  LumenCache: what an integration uses
+transports/             ways of reaching a system (MQTT today)
+  mqtt/ client, adapter, wire format
+transport.py            the Transport interface
+domain/                 model, events, commands: no wire format
+```
+
+A module imports only from the layers below it. A transport turns its wire format into domain events and domain commands into wire messages, so the model and the code above it never see a topic, an event code or a URL. `lint-imports` checks this in CI (see `[tool.importlinter]` in `pyproject.toml`), and only the MQTT transport may import `aiomqtt`. A new transport is a new folder under `transports/` that implements `Transport`.
+
+## Several transports
+
+A `LumenCache` has one transport, and that transport can be a `FallbackTransport`: an ordered list of transports in which a later one is connected only while the earlier ones are down.
+
+```python
+from pylumencache import LumenCache
+
+cache = LumenCache.with_fallback([first, second], fail_after=30)   # the list is the priority order
+```
+
+- Only the first transport is started at first. If nothing is connected after `fail_after` seconds, the next one is started, and so on down the list.
+- The earlier transports keep trying in the background. As soon as one connects, every transport after it is stopped, so a later transport is connected only while all earlier ones are down.
+- Events and commands use the highest-priority transport that is connected, so the model never gets two sources at once. If a command is not supported by that transport, the next connected one is tried.
+- "Down" means not connected. A transport that is connected but silent counts as up.
+- `cache.transport.active` is the transport in use. Connection listeners hear `True` when some transport is connected and `False` when none is, not each switch.
+
+The fallback code (`transports/fallback.py`) knows nothing about any particular transport. It works with anything that implements `Transport`, and the import check enforces that.
+
+## Using the library
 
 ```python
 import asyncio
-from pylumencache.client import LumenCacheClient
-from pylumencache.protocol import commands
+from pylumencache import LumenCache, SetLight
 
 async def main():
-    client = LumenCacheClient("<host>", "<Prefix Topic>", username="<user>", password="<pass>")
-    client.add_listener(print)               # receives typed messages, such as ZoneEvent or PdmHeartbeat
-    await client.start()                     # connects in the background and reconnects if it drops
-    await client.wait_connected(30)
-    await client.send(commands.zone_control(zone_id=250, brightness=50, fade=800))
+    cache = LumenCache.mqtt("<host>", "<Prefix Topic>", username="<user>", password="<pass>")
+    cache.model.add_listener(print)          # called with a Change when a device, zone or light changes
+    await cache.start()                      # connects in the background and reconnects if it drops
+    await cache.wait_connected(30)
+    await cache.send(SetLight("zone", 250, brightness=50, fade=800))
     await asyncio.sleep(60)
-    await client.stop()
+    await cache.stop()
 
 asyncio.run(main())
 ```
 
-Listeners can be plain functions or coroutines; one that raises does not affect the others. `tools/watch.py` does the same from the command line.
+Model listeners are plain functions; transport listeners can also be coroutines. One that raises does not affect the others. `cache.model` holds the devices and the last known state of each zone and light. `cache.send_raw(...)` sends any MQTT command as a fallback. For the raw typed messages, use `cache.transport.add_message_listener(...)` with `wire.commands` builders. `tools/watch.py` does that from the command line.
 
 ## Capturing the protocol
 

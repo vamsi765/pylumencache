@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Regenerate the code tables in docs/protocol.md and the code constants in
-src/pylumencache/protocol/codes.py commands.py and models.py from docs/asyncapi.yaml.
+src/pylumencache/transports/mqtt/wire/codes.py commands.py and models.py from docs/asyncapi.yaml.
 
 docs/asyncapi.yaml (an AsyncAPI 3.0 document) is the source for message codes,
 payload shapes and observations. The tables between the GENERATED markers in
@@ -35,9 +35,9 @@ except ImportError:
 ROOT = Path(__file__).resolve().parent.parent
 SPEC_PATH = ROOT / "docs" / "asyncapi.yaml"
 DOC_PATH = ROOT / "docs" / "protocol.md"
-CODES_PATH = ROOT / "src" / "pylumencache" / "protocol" / "codes.py"
-COMMANDS_PATH = ROOT / "src" / "pylumencache" / "protocol" / "commands.py"
-MODELS_PATH = ROOT / "src" / "pylumencache" / "protocol" / "models.py"
+CODES_PATH = ROOT / "src" / "pylumencache" / "transports" / "mqtt" / "wire" / "codes.py"
+COMMANDS_PATH = ROOT / "src" / "pylumencache" / "transports" / "mqtt" / "wire" / "commands.py"
+MODELS_PATH = ROOT / "src" / "pylumencache" / "transports" / "mqtt" / "wire" / "models.py"
 PY_TYPES = {"integer": "int", "number": "float", "string": "str"}
 
 BLOCK = re.compile(

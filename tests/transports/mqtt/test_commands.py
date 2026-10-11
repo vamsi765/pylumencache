@@ -5,9 +5,9 @@ from pathlib import Path
 import pytest
 import yaml
 
-from pylumencache.protocol import commands
+from pylumencache.transports.mqtt.wire import commands
 
-SPEC = yaml.safe_load((Path(__file__).parent.parent / "docs" / "asyncapi.yaml").read_text(encoding="utf-8"))
+SPEC = yaml.safe_load((Path(__file__).parents[3] / "docs" / "asyncapi.yaml").read_text(encoding="utf-8"))
 
 
 def snake(name: str) -> str:
