@@ -96,4 +96,4 @@ While it runs, press a wall switch and change a light from the PowerPlane displa
 
 ## License
 
-Apache License 2.0.
+Apache License 2.0. See [LICENSE](LICENSE).
