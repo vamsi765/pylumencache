@@ -1,6 +1,6 @@
 # ReNetA MQTT protocol (observed)
 
-> **Version 0.0.1.** Written from one capture of one system (8 Oct 2026, 26 messages, taken after a system restart) plus the command codes in LumenCache's "Commands List" article. It is not an official specification. Anything marked 🔬 is unknown or an inference and must be confirmed (from a new capture or from LumenCache) before code depends on it. Identifiers are shown as placeholders such as `<hsn>`.
+> **Version 0.1.0.** Written from several captures of one system plus the command codes in LumenCache's "Commands List" article. It is not an official specification. Anything marked 🔬 is unknown or an inference and must be confirmed (from a new capture or from LumenCache) before code depends on it. Identifiers are shown as placeholders such as `<hsn>`.
 
 ## 1. Connection
 
@@ -12,6 +12,7 @@
 | MQTT version | MQTT 5 works (the capture tool uses it) |
 | Access scope | Read and write under the issued Prefix Topic. Subscribing to `<prefix>/#` is allowed. 🔬 Behavior outside the prefix is untested (expected: refused) |
 | Client IDs | Must be unique per client. EMQX disconnects an existing client that uses the same ID |
+| Echo | A client that is subscribed to a topic receives its own publishes back. Every command sent from the capture tool came back on `cmd` about 0.1 s later |
 | Other clients | A message published by a second client (MQTT Explorer) was received by the first, so several clients can connect. 🔬 Client and rate limits unknown |
 
 ## 2. Topic layout
@@ -20,15 +21,22 @@ Every topic sits under the **Prefix Topic** (`<prefix>`), a path of the form `pl
 
 | Topic | Direction | Content |
 |---|---|---|
-| `cmd` | client to system | Commands (JSON). Observed: the hail `{"e":9,"g":0}` |
+| `cmd` | client to system | Commands (JSON). Sent so far: `e:8`, `e:9`, `e:10`, `e:11`, `e:13`, `e:49`, `e:56` and `e:57`. Also carries the broker echo and an empty message, see below |
 | `status` | system to client | Heartbeats, zone events, error reports |
 | `errors` | system to client | Error reports (same payload as on `status`) |
-| `meta` | system to client | System information |
+| `meta` | system to client | System information, and the reply to a hail (`e:137`, section 5.4) |
 | `dev/...` | system to client | One message per device (inventory) |
 
-LumenCache's mobile setup tutorial lists `status`, `meta`, `events` and `cmd`. `events` did not appear in this capture (🔬 it may only carry events), and `errors` is not in the tutorial. The tutorial says the prefix must end with `/` in the mobile app; the integration joins prefix and topic with exactly one `/` either way. The tutorial describes `meta` as listing devices, but the capture shows devices under `dev/...`; what was observed is used here.
+LumenCache's mobile setup tutorial lists `status`, `meta`, `events` and `cmd`. `events` did not appear in any capture (🔬 it may only carry events), and `errors` is not in the tutorial. The tutorial says the prefix must end with `/` in the mobile app; the integration joins prefix and topic with exactly one `/` either way. The tutorial describes `meta` as listing devices, but the capture shows devices under `dev/...`; what was observed is used here.
 
-**Retention.** No message in the capture was retained. A client that connects after the system has published cannot learn the inventory by subscribing alone.
+**Retention.** No message in any capture was retained, the inventory included. A client that connects after the system has published cannot learn the inventory by subscribing alone.
+
+**What appears on `cmd` after a command.** Every command produced the same two messages, whatever the command or GID:
+
+1. The command itself, echoed back by the broker, about 0.1 s later.
+2. A message with an empty payload, 0.14 to 0.4 s after the echo.
+
+This also happened for GID 54 and GID 0, which are not devices on this system, so the empty message is not a success acknowledgement. 🔬 What publishes it (the system, or the broker) and what it means are unknown. No error code or other reply has been seen for any command.
 
 ## 3. Message conventions
 
@@ -36,14 +44,18 @@ LumenCache's mobile setup tutorial lists `status`, `meta`, `events` and `cmd`. `
 - `e` is a numeric event or command code. `g` is a group/device ID (GID) or an address.
 - The same code can appear as a command and as a status echo (see `e:56`).
 
-Codes seen in the capture:
+Codes seen in the captures:
 
 | `e` | Seen as | Meaning |
 |---|---|---|
-| 9 | command on `cmd` | Hail: `{"e":9,"g":0}` lists devices still at GID 0. 🔬 No reply was seen, which is consistent with no uncommissioned devices |
-| 56 | status | Zone on/off/brightness/color event |
-| 139 | status | Periodic PDM heartbeat and telemetry |
-| 254 | status and `errors` | Error report |
+| 8, 10, 11, 13 | command on `cmd` | Sent for GID 54 (not a device here) and for GIDs 1, 2 and 14. Only the echo and the empty message followed, every time (section 6) |
+| 9 | command on `cmd` | Hail: `{"e":9,"g":0}` lists devices still at GID 0. It answered once, as `e:137` on `meta` (section 5.4). `e:9` with a GID (54, 14) got no reply |
+| 49 | command on `cmd` | `{"e":49,"g":2,"a":9}` (list zones) got no reply |
+| 56 | status; command on `cmd` | Zone on/off/brightness/color event. Sent as a command to zone 250: no reply |
+| 57 | command on `cmd` | Direct control. Sent to GIDs 100, 14, 10 and 0. To GID 100 the lights followed the command (confirmed by eye); the effect for the other GIDs is not reported. No state message or error was published |
+| 137 | meta | Reply to a hail: a device at GID 0 (section 5.4) |
+| 139 | status | Periodic heartbeat from the PowerPlane, the PDM and the controller (section 5.1) |
+| 254 | status and `errors` | Error report. Seen once, shortly after a restart |
 
 ### Documented commands
 
@@ -71,7 +83,7 @@ From LumenCache's Commands List. All are JSON published on `cmd`. The examples u
 | `g` / `gid` | Device address (GID). Set with `e:32` |
 | `z` / `zid` | Zone ID. Membership is set with `e:49` |
 | `hsn` | Permanent per-device serial, used before the device has a GID |
-| `bri` | Brightness, 0 to 100. 🔬 Whether decimals are accepted (the plan wants 0.1% steps) |
+| `bri` | Brightness, 0 to 100. A decimal (12.5) sent to GID 100 was accepted and the light dimmed from 50 (confirmed by eye); whether the 0.1% steps the plan wants are honored cannot be told by eye. 🔬 Out-of-range values (500 was sent) are unconfirmed |
 | `cct` | Color temperature in kelvin |
 | `fade` | Transition time in milliseconds |
 | `ma` | Drive current in milliamps |
@@ -82,7 +94,7 @@ From LumenCache's Commands List. All are JSON published on `cmd`. The examples u
 
 ## 4. Inventory
 
-The system publishes its inventory once, shortly after it connects to the broker. In the capture it took about 1.7 s, from the `meta` message to the last `dev/...` message. 🔬 Whether any command makes the system publish it again is unknown, and this is the most important open question for the integration (section 8).
+The system publishes its inventory once, shortly after it connects to the broker. After a restart or reboot it takes 1.3 to 1.7 s from the `meta` message to the last `dev/...` message: `meta` comes about 11 s after boot, then 15 devices (GIDs 1 to 15) follow, with no duplicates after the latest reboot. A restart or reboot is the only trigger seen so far. 🔬 Whether any command makes the system publish it again is unknown, and this is the most important open question for the integration (section 9).
 
 ### 4.1 `meta`
 
@@ -122,17 +134,18 @@ Payload:
 
 | Field | Meaning |
 |---|---|
-| `gid` | Device ID. Unique across the system (1 to 15 in this capture) |
+| `gid` | Device ID. Unique across the system (1 to 15) |
 | `hsn` | Hardware serial number. Stable, so suited as the permanent device ID. Sockets use the PDM's serial plus a suffix (`_S1` to `_S8`) |
 | `name` | Product or default name (`Reneta PP`, `PDM_RJ`, `Socket_1`, `SC-CC2-50W`, `SC-PV2-50W`, `SW-D`) |
 | `cat` | Device category, see the table above |
 | `parent` | GID of the parent device. The PowerPlane has 65535 (no parent) |
-| `time` | 🔬 Unknown (a millisecond counter of some kind) |
+| `time` | 🔬 Unknown. It is not a clock: socket card 14 keeps the same value (1505366) across restarts |
 
 Observations from this system:
 
 - The PowerPlane (gid 1) has one PDM (gid 2), which has sockets gid 3 to 10 (eight ports). Socket cards gid 14 (SC-CC2) and gid 15 (SC-PV2) sit under sockets gid 4 and gid 6.
 - One socket card (gid 11, SC-CC2) and both switches (gid 12 and 13) have `parent` 0 and appear at the top level of `dev/`. 🔬 Why is unknown (possibly not yet assigned to a parent).
+- The PowerPlane's `dev/pp:1` message has no `hsn`, although its heartbeat does (section 5.1). The PowerPlane therefore cannot be matched to its serial from the inventory alone.
 - Socket gid 5 was announced twice with identical payloads. Consumers must upsert by `gid` (or `hsn`), not append.
 - 🔬 The device list does not show which fixtures belong to which zone, nor which socket cards are CCT-capable.
 
@@ -140,23 +153,48 @@ Observations from this system:
 
 ### 5.1 Heartbeat: `e:139`
 
-Published roughly every 60 s by the PDM.
+Three sources send `e:139` on `status`, and each has its own shape and rhythm:
+
+| `g` | Source | Interval | Fields |
+|---|---|---|---|
+| 1 | PowerPlane | 5 min. After a boot the first one arrives 300 s later | `e g hsn swv hwv time heap` |
+| 2 | PDM | 60 s | `e g bay hsn swv hwv time heap temp rh` |
+| 100 | Controller. 🔬 Inferred; GID 100 is not in the inventory | Not periodic: after a boot, and in the minutes after a light command. Gaps widen (15, 20, 20, 25, 30 s). None in 7 minutes of idle and query commands | `e g opc mode 12v term heap txrx uptime temp` |
+
+PDM example:
 
 ```json
 { "e": 139, "g": 2, "bay": 3, "hsn": "<hsn>", "swv": "01.00.12m", "hwv": "02.05", "time": 60182, "heap": 8480948, "temp": 31.5, "rh": 35.71 }
 ```
 
+PowerPlane example:
+
+```json
+{ "e": 139, "g": 1, "hsn": "<hsn>", "swv": "01.00.02", "hwv": "01.00", "time": 300737, "heap": 6181804 }
+```
+
+Controller example:
+
+```json
+{ "e": 139, "g": 100, "opc": 2, "mode": 3, "12v": 1, "term": 1, "heap": 13416, "txrx": [165, 0, 278, 165], "uptime": 75, "temp": 30.6 }
+```
+
 | Field | Meaning |
 |---|---|
-| `g` | GID of the reporting PDM |
-| `hsn` | Serial of the PDM |
-| `bay` | 🔬 Unknown (3 in the capture) |
-| `swv`, `hwv` | Software and hardware version |
-| `time` | Uptime in milliseconds. Increments by about 60 000 per minute in the capture |
+| `g` | GID of the reporting PowerPlane or PDM; 100 for the controller |
+| `hsn` | Serial of the reporting device |
+| `bay` | 🔬 Unknown (3 in every PDM heartbeat) |
+| `swv`, `hwv` | Software and hardware version. PDM: 01.00.12m and 02.05. PowerPlane: 01.00.02 and 01.00 |
+| `time` | Uptime in milliseconds (PowerPlane and PDM). Confirmed: the PDM value matched the real time since the reboot to within 15 s after 8.5 hours |
+| `uptime` | Uptime in seconds (controller). Confirmed: 75 at 81 s after the boot time that the other heartbeats imply |
 | `heap` | Free memory (bytes). 🔬 Unit inferred |
 | `temp`, `rh` | Temperature (°C) and relative humidity (%). 🔬 Units inferred |
+| `opc`, `mode`, `12v`, `term` | 🔬 Unknown (2, 3, 1 and 1 in every controller heartbeat) |
+| `txrx` | 🔬 Unknown. Four counters; the first and fourth were always equal, and they were non-zero right after commands and zero when idle, so they may count traffic since the last heartbeat |
 
-The heartbeat is a liveness signal: if it stops, the system or the PDM is probably gone.
+The heartbeats are liveness signals: if one stops, the system or that device is probably gone. The controller sends nothing when idle, so it cannot be used as a liveness signal; the PDM's 60 s is the steadier one.
+
+🔬 In one capture the PowerPlane's `time` was 4 h 30 min while the PDM's was 8 h 33 min, so the PowerPlane restarted about 4 h after the system reboot. Nobody power-cycled it, so it restarted by itself. 🔬 Cause unknown (a watchdog or crash reset is possible); the PDM did not restart.
 
 ### 5.2 Zone event: `e:56`
 
@@ -167,13 +205,15 @@ The heartbeat is a liveness signal: if it stops, the system or the PDM is probab
 
 | Field | Meaning |
 |---|---|
-| `z` | Zone ID (250 in the capture) |
+| `z` | Zone ID (250) |
 | `on` | 0 off, 1 on |
 | `bri`, `cct` | Present when turning on. `bri` is 0 to 100 (percent) and `cct` is in kelvin, as documented by LumenCache |
 | `dev` | GID of the device that caused the event. 12 is a SW-D switch, so presses show up here. 🔬 Inferred |
 | `g` | 65534 in all three messages. 🔬 Unknown (possibly a broadcast or zone address) |
 
-Three presses of switch 12 gave off (12:26:19), on (12:26:25), off (12:26:39).
+Three presses of switch 12 gave off, on (6 s later), off (14 s after that).
+
+After a reboot, five events from switch 12 followed the same pattern (off, on, off, on, off). Both "on" events carried `bri` 100 and `cct` 5000. The last command sent by hand before them was `e:57` with `cct` 5000 and `bri` 0. That is consistent with the system remembering the last color temperature but not a brightness of 0. 🔬 Confirm with a test that changes `cct` to another value first.
 
 🔬 No per-fixture state message was seen. Changes appear at zone level only.
 
@@ -185,45 +225,105 @@ Three presses of switch 12 gave off (12:26:19), on (12:26:25), off (12:26:39).
 
 Published on `status` and on `errors` (identical), about a second after the inventory. 🔬 `g` 100 is not a GID in the inventory. The meaning of error 38 and the full error code list are unknown.
 
-## 6. Timeline of the capture
+### 5.4 Uncommissioned device: `e:137`
 
-| Time (UTC) | Event |
+The reply to a hail (`{"e":9,"g":0}`), published on `meta` about 0.6 s after the echo:
+
+```json
+{ "e": 137, "g": 0, "hsn": "<hsn>", "b": 0, "pc": 2, "cat": 37, "hwm": "90003-200__SC-PV2-50W" }
+```
+
+| Field | Meaning |
 |---|---|
-| 12:22:30 | Test hail published by the capture tool (echoed back) |
-| 12:23:48 | `meta` published (system connected after restart) |
-| 12:23:49 to 12:23:50 | `dev/...` inventory (14 devices, one duplicate) |
-| 12:23:51 | `e:254` error on `status` and `errors` |
-| 12:24:35, 12:25:35, 12:26:35 | `e:139` heartbeat |
-| 12:26:19, 12:26:25, 12:26:39 | `e:56` zone events from switch presses |
+| `g` | 0: the device has no GID yet |
+| `hsn` | Serial of the device |
+| `cat` | 37, the socket card category (section 4.2) |
+| `hwm` | Hardware model: part number and name |
+| `b`, `pc` | 🔬 Unknown (0 and 2) |
 
-## 7. Open questions
+One device answered. 🔬 It is not in the inventory under a GID of its own. The system has two SC-PV2-50W cards (GID 15 is one), so whether this is a third, unassigned one is unconfirmed.
+
+## 6. Commands tried
+
+Commands sent from the capture tool in interactive mode. All of them got the echo and the empty `cmd` message described in section 2. The table lists anything beyond that.
+
+| Command | Sent | Result |
+|---|---|---|
+| `e:8` | `g` 54, 2 and 14 | No reply |
+| `e:9` | `g` 0 (hail) | One reply: `e:137` on `meta` (section 5.4). An earlier hail got no reply |
+| `e:9` | `g` 54, twice; `g` 14 | No reply |
+| `e:10` | `g` 54, 2 and 14 | No reply |
+| `e:11` | `g` 54, 2 and 1 | No reply, and no extra heartbeat |
+| `e:13` | `g` 54, 2 and 14 | No reply, and no extra status |
+| `e:49` | `g` 2, `a` 9 (list zones) | No reply |
+| `e:56` | `z` 250, `bri` 50, `cct` 4000, `fade` 800 | No reply and no `e:56` status event. 🔬 Effect on the lights not reported |
+| `e:57` | `g` 100, 14, 10 and 0; `bri` 0, 10, 12.5, 50, 100 and 500; `cct` 2700 to 5000; `fade` 800 and 1000 | To GID 100 the lights changed to the commanded brightness (confirmed by eye), and 12.5 after 50 dimmed them. 🔬 Effect for GIDs 14, 10 and 0 not reported. No state message, no error |
+
+So of the query commands only the hail answers. None of the others republished the inventory, even for real GIDs, so P-6 is still open. They may need something we have not sent, or answer on a path we do not see. GID 54 in the Commands List examples is not a device on this system (GIDs are 1 to 15, plus 100). Not tried: `e:36`, `e:32`, `e:18`, `e:15` (they change or persist settings).
+
+## 7. Timelines
+
+After a restart, relative to the `meta` message:
+
+| Time since `meta` | Event |
+|---|---|
+| -78 s | Test hail published by the capture tool (echoed back) |
+| 0 | `meta` published (system connected after restart) |
+| +1 to +2 s | `dev/...` inventory (14 devices, one duplicate) |
+| +3 s | `e:254` error on `status` and `errors` |
+| +47 s, +107 s, +167 s | `e:139` heartbeat |
+| +151 s, +157 s, +171 s | `e:56` zone events from switch presses |
+
+After a reboot, relative to the reboot (approximate; the restart time is derived from the uptimes in the later heartbeats):
+
+| Time since reboot | Event |
+|---|---|
+| -41 s | Last PDM heartbeat before the reboot (`time` 2.70 million ms) |
+| 0 | System restarts |
+| +11 s | `meta` published |
+| +11 to +12 s | `dev/...` inventory, 15 devices in 1.25 s |
+| +59 s | First PDM heartbeat, `time` 60168 |
+| +78 s | First controller heartbeat, `uptime` 75 |
+| +110 to +132 s | Five `e:56` events from switch 12 |
+| +300 s | First PowerPlane heartbeat, `time` 300737 |
+
+## 8. Open questions
 
 IDs refer to the register in the implementation plan.
 
 | ID | Question | Status |
 |---|---|---|
-| P-1 | Topic names | Mostly known (section 2). `events` not seen |
-| P-2 | `status` schema | Partly known (`e:139`, `e:56`, `e:254`). Others unknown |
+| P-1 | Topic names | Mostly known (section 2). `events` never seen; `errors` seen only once, with the `e:254` report |
+| P-2 | `status` schema | Partly known (`e:139` from three sources, `e:56`, `e:254`). Others unknown |
 | P-3 | `meta` and device schema | Known (section 4). Some field meanings unknown |
 | P-4 | Events (switch, fault, mismatch) | Switch presses seen as `e:56`. Faults and mismatches unknown |
-| P-5 | Command acknowledgements and errors | Unknown. No command other than the hail has been sent |
-| P-6 | Command to republish the inventory | Not documented. `e:13` (status pull) and `e:9` (lookup by GID) work per device; 🔬 whether their replies republish the `dev/...` messages |
-| P-7 | Retained messages | Answered: none retained |
-| P-8 | Brightness encoding | Known: `bri` 0 to 100. 🔬 Whether decimals are accepted |
+| P-5 | Command acknowledgements and errors | Partly: every command gets an echo and an empty `cmd` message, even for GIDs that do not exist, so it is not a success signal. No error codes seen, even for `bri` 500 |
+| P-6 | Command to republish the inventory | Not documented. A reboot republishes it. `e:8`, `e:9`, `e:10`, `e:11`, `e:13` and `e:49` with real GIDs got no reply and no inventory. Only the hail answers (`e:137`) |
+| P-7 | Retained messages | Answered: none retained, in any capture |
+| P-8 | Brightness encoding | Known: `bri` 0 to 100. A decimal (12.5) was accepted and dimmed the light. 🔬 Whether 0.1% resolution is honored |
 | P-9 | Color temperature encoding | Known: `cct` in kelvin |
 | P-10 | Fade encoding | Known: `fade` in milliseconds |
 | P-11 | Zones | One zone (250) seen. How membership is read is unknown |
 | P-12 | Client and rate limits | Unknown |
-| P-13 | Status of non-lighting devices | PDM heartbeat known. Switches appear only as `dev` in zone events |
-| P-14 | Firmware version | Known from the heartbeat (`swv`, `hwv`) |
+| P-13 | Status of non-lighting devices | The PowerPlane, the PDM and the controller send heartbeats. Switches and sockets do not; switches appear only in zone events |
+| P-14 | Firmware version | Known from the heartbeat (`swv`, `hwv`) for the PowerPlane and the PDM. Not available for switches or cards |
+| P-15 | What GID 100 is, and the fields `opc`, `mode`, `12v`, `term`, `txrx`. It also accepted `e:57` (section 6) | Unknown. New; not yet in the plan's register |
+| P-16 | Why the PowerPlane restarted by itself about 4 h after the reboot, without the PDM (section 5.1) | Unknown. New; not yet in the plan's register |
+| P-17 | What the empty message on `cmd` means | Unknown. New; not yet in the plan's register |
+| P-18 | What `b` and `pc` mean in `e:137`, and whether the device it reported is unassigned | Unknown. New; not yet in the plan's register |
+| P-19 | Effect of `e:56` on a zone, and of `bri` outside 0 to 100 | Not reported. New; not yet in the plan's register |
 
-## 8. What the integration depends on
+## 9. What the integration depends on
 
-- **Inventory after startup.** Nothing is retained, so when Home Assistant starts while the system is already connected, it receives no inventory. The integration needs a way to make the system republish it (P-6), or it must wait until the system next reconnects.
+- **Inventory after startup.** A reboot republishes it, but nothing is retained, so when Home Assistant starts while the system is already connected, it receives no inventory. The integration needs a way to make the system republish it (P-6), or it must wait until the system next reconnects.
 - **Stable IDs.** `hsn` for devices and `sys` for the system.
-- **Liveness.** The 60 s heartbeat. 🔬 The number of missed beats before marking entities unavailable still has to be chosen.
+- **Liveness.** The PDM's 60 s heartbeat. The PowerPlane sends every 5 min and the controller only after boot and light commands (section 5.1). 🔬 The number of missed beats before marking entities unavailable still has to be chosen.
 - **State.** Zone events are the only state seen so far. Per-fixture state needs zone membership (`e:49`) and may need other messages.
 
-## 9. Updating this document
+## 10. Updating this document
 
 After a firmware or backend update: record a new capture, scrub identifiers, diff it against the stored fixtures, and update this document and the fixtures from the result. Never commit a raw capture.
+
+When comparing capture:
+
+- The capture tool numbers fake serials (`HSN0001`, ...) in order of appearance, so the same device gets different fakes in different captures. Match devices by GID or name, not by fake serial.
