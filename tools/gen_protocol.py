@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Regenerate the code tables in docs/protocol.md and the code constants in
-src/pylumencache/protocol/codes.py from docs/asyncapi.yaml.
+src/pylumencache/protocol/codes.py and commands.py from docs/asyncapi.yaml.
 
 docs/asyncapi.yaml (an AsyncAPI 3.0 document) is the source for message codes,
 payload shapes and observations. The tables between the GENERATED markers in
-docs/protocol.md and the whole of codes.py are written by this script; the rest
+docs/protocol.md and the whole of codes.py and commands.py are written by this script; the rest
 of protocol.md is hand-written. The script also checks the source: no key that YAML read as a
 boolean (such as an unquoted `on`), and every message example must match its
 payload schema.
@@ -30,6 +30,8 @@ ROOT = Path(__file__).resolve().parent.parent
 SPEC_PATH = ROOT / "docs" / "asyncapi.yaml"
 DOC_PATH = ROOT / "docs" / "protocol.md"
 CODES_PATH = ROOT / "src" / "pylumencache" / "protocol" / "codes.py"
+COMMANDS_PATH = ROOT / "src" / "pylumencache" / "protocol" / "commands.py"
+PY_TYPES = {"integer": "int", "number": "float", "string": "str"}
 
 BLOCK = re.compile(
     r"(<!-- BEGIN GENERATED (?P<name>[\w-]+)[^\n]*-->\n)(?P<body>.*?)(<!-- END GENERATED (?P=name) -->)",
@@ -119,6 +121,55 @@ def codes_module(spec: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
+def snake(name: str) -> str:
+    return re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", name).lower()
+
+
+def commands_module(spec: dict) -> str:
+    """Python source for one builder function per documented command (`x-documented`)."""
+    schemas = spec["components"]["schemas"]
+    out = [
+        '"""Command builders. Generated from docs/asyncapi.yaml by tools/gen_protocol.py; do not edit.',
+        "",
+        "Each function returns the JSON object to publish on the `cmd` topic. Arguments left as",
+        "None are left out of the message. Argument names follow the parameter names in",
+        "docs/protocol.md; the wire key is shown in each docstring.",
+        '"""',
+        "from __future__ import annotations",
+        "",
+        "from .codes import Code",
+        "",
+        "",
+        "def _check_range(name: str, value, low, high) -> None:",
+        "    if not low <= value <= high:",
+        '        raise ValueError(f"{name} must be between {low} and {high}, got {value}")',
+    ]
+    for key, m in spec["components"]["messages"].items():
+        if not m.get("x-documented"):
+            continue
+        params = []
+        for wire, prop in m["payload"]["properties"].items():
+            if wire == "e":
+                continue
+            ref = prop["$ref"].rsplit("/", 1)[1]
+            params.append((wire, snake(ref), ref, schemas[ref]))
+        sig = "".join(f"{py}: {PY_TYPES[sch['type']]} | None = None, " for _, py, _, sch in params)
+        out += ["", "", f"def {snake(key)}({'*, ' if params else ''}{sig.rstrip(', ')}) -> dict:"]
+        out.append(f'    """{m["summary"]} (e:{m["x-code"]}).')
+        if params:
+            out += ["", "    Wire keys: " + ", ".join(f"{py} -> {wire}" for wire, py, _, _ in params) + ".", ]
+        out.append('    """')
+        for _, py, _, sch in params:
+            if "minimum" in sch:
+                out += [f"    if {py} is not None:",
+                        f"        _check_range(\"{py}\", {py}, {sch['minimum']}, {sch['maximum']})"]
+        out.append(f"    msg: dict = {{\"e\": Code.{snake(key).upper()}.value}}")
+        for wire, py, _, _ in params:
+            out += [f"    if {py} is not None:", f"        msg[\"{wire}\"] = {py}"]
+        out.append("    return msg")
+    return "\n".join(out) + "\n"
+
+
 def non_string_keys(node, path="") -> list:
     """YAML 1.1 turns on/off/yes/no into booleans; report any key that is not text."""
     bad = []
@@ -193,6 +244,7 @@ def main() -> None:
     targets = [
         (DOC_PATH, render(DOC_PATH.read_text(encoding="utf-8"), spec)),
         (CODES_PATH, codes_module(spec)),
+        (COMMANDS_PATH, commands_module(spec)),
     ]
     stale = False
     for path, updated in targets:

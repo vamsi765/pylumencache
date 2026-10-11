@@ -13,7 +13,10 @@ dependencies = []
 
 [project.optional-dependencies]
 capture = ["paho-mqtt"]
-dev = ["pyyaml", "jsonschema", "paho-mqtt"]
+dev = ["pyyaml", "jsonschema", "paho-mqtt", "pytest"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/pylumencache"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
