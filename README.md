@@ -4,7 +4,7 @@ Unofficial Python library for [LumenCache](https://www.lumencache.com) ReNetA li
 
 > **Unofficial.** This is an independent, community project. It is not made, endorsed or supported by LumenCache.
 
-> **Status: pre-alpha.** The protocol is being reverse-engineered from captures. The library itself is a skeleton.
+> **Status: pre-alpha.** The protocol was worked out from captures, and the library covers it: typed messages and commands, an async client, a system model and a fake controller. The API may change before the first release, and the library is not on PyPI yet.
 
 ## Contents
 
@@ -54,9 +54,7 @@ Listeners can be plain functions or coroutines; one that raises does not affect 
 
 ## Capturing the protocol
 
-The protocol is documented from real traffic, in `docs/protocol.md`, with the message definitions in `docs/asyncapi.yaml` (an AsyncAPI description; the code tables in the markdown are generated from it by `tools/gen_protocol.py`). The library's CLI includes a capture command (`lumencache capture`, *planned*) that records everything the system publishes, read-only by default, and a diff command that compares a new capture with the stored fixtures. After a firmware or backend update, re-capture, diff, and refresh the spec and fixtures.
-
-Until the CLI exists, `tools/capture.py` does the same job, and can also send commands by hand:
+The protocol is documented from real traffic, in `docs/protocol.md`, with the message definitions in `docs/asyncapi.yaml` (an AsyncAPI description; the code tables in the markdown are generated from it by `tools/gen_protocol.py`). `tools/capture.py` records everything the system publishes (read-only by default) and can also send commands by hand. After a firmware or backend update, re-capture and refresh the spec and fixtures:
 
 ```bash
 # one-time setup: create a virtual environment and install the dependency
