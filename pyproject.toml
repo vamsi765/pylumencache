@@ -14,10 +14,26 @@ dependencies = ["aiomqtt>=2.0"]
 
 [project.optional-dependencies]
 capture = ["paho-mqtt"]
-dev = ["pyyaml", "jsonschema", "paho-mqtt", "pytest"]
+dev = ["pyyaml", "jsonschema", "paho-mqtt", "pytest", "ruff", "mypy", "types-PyYAML"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/pylumencache"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+extend-exclude = ["capture*.jsonl"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/pylumencache/protocol/commands.py" = ["E501"]   # generated
+"src/pylumencache/protocol/models.py" = ["E501"]     # generated
+
+[tool.mypy]
+strict = true
+files = ["src"]

@@ -26,7 +26,7 @@ class PowerPlaneHeartbeat:
     WIRE = {"g": "g", "hsn": "hsn", "swv": "swv", "hwv": "hwv", "time": "time", "heap": "heap"}
 
     @classmethod
-    def from_dict(cls, data: dict) -> PowerPlaneHeartbeat:
+    def from_dict(cls, data: dict[str, Any]) -> PowerPlaneHeartbeat:
         values = {py: data[wire] for wire, py in cls.WIRE.items() if wire in data}
         extra = {k: v for k, v in data.items() if k not in cls.WIRE and k != "e"}
         return cls(**values, extra=extra)
@@ -51,7 +51,7 @@ class PdmHeartbeat:
     WIRE = {"g": "g", "bay": "bay", "hsn": "hsn", "swv": "swv", "hwv": "hwv", "time": "time", "heap": "heap", "temp": "temp", "rh": "rh"}
 
     @classmethod
-    def from_dict(cls, data: dict) -> PdmHeartbeat:
+    def from_dict(cls, data: dict[str, Any]) -> PdmHeartbeat:
         values = {py: data[wire] for wire, py in cls.WIRE.items() if wire in data}
         extra = {k: v for k, v in data.items() if k not in cls.WIRE and k != "e"}
         return cls(**values, extra=extra)
@@ -76,7 +76,7 @@ class ControllerHeartbeat:
     WIRE = {"g": "g", "opc": "opc", "mode": "mode", "12v": "v12", "term": "term", "heap": "heap", "txrx": "txrx", "uptime": "uptime", "temp": "temp"}
 
     @classmethod
-    def from_dict(cls, data: dict) -> ControllerHeartbeat:
+    def from_dict(cls, data: dict[str, Any]) -> ControllerHeartbeat:
         values = {py: data[wire] for wire, py in cls.WIRE.items() if wire in data}
         extra = {k: v for k, v in data.items() if k not in cls.WIRE and k != "e"}
         return cls(**values, extra=extra)
@@ -98,7 +98,7 @@ class SwitchHeartbeat:
     WIRE = {"g": "g", "uirgb": "uirgb", "term": "term", "heap": "heap", "txrx": "txrx", "uptime": "uptime"}
 
     @classmethod
-    def from_dict(cls, data: dict) -> SwitchHeartbeat:
+    def from_dict(cls, data: dict[str, Any]) -> SwitchHeartbeat:
         values = {py: data[wire] for wire, py in cls.WIRE.items() if wire in data}
         extra = {k: v for k, v in data.items() if k not in cls.WIRE and k != "e"}
         return cls(**values, extra=extra)
@@ -120,7 +120,7 @@ class ZoneEvent:
     WIRE = {"z": "z", "on": "on", "bri": "bri", "cct": "cct", "dev": "dev", "g": "g"}
 
     @classmethod
-    def from_dict(cls, data: dict) -> ZoneEvent:
+    def from_dict(cls, data: dict[str, Any]) -> ZoneEvent:
         values = {py: data[wire] for wire, py in cls.WIRE.items() if wire in data}
         extra = {k: v for k, v in data.items() if k not in cls.WIRE and k != "e"}
         return cls(**values, extra=extra)
@@ -139,7 +139,7 @@ class ErrorReport:
     WIRE = {"g": "g", "err": "err", "v": "v"}
 
     @classmethod
-    def from_dict(cls, data: dict) -> ErrorReport:
+    def from_dict(cls, data: dict[str, Any]) -> ErrorReport:
         values = {py: data[wire] for wire, py in cls.WIRE.items() if wire in data}
         extra = {k: v for k, v in data.items() if k not in cls.WIRE and k != "e"}
         return cls(**values, extra=extra)
@@ -161,7 +161,7 @@ class HailReply:
     WIRE = {"g": "g", "hsn": "hsn", "b": "b", "pc": "pc", "cat": "cat", "hwm": "hwm"}
 
     @classmethod
-    def from_dict(cls, data: dict) -> HailReply:
+    def from_dict(cls, data: dict[str, Any]) -> HailReply:
         values = {py: data[wire] for wire, py in cls.WIRE.items() if wire in data}
         extra = {k: v for k, v in data.items() if k not in cls.WIRE and k != "e"}
         return cls(**values, extra=extra)
@@ -183,7 +183,7 @@ class DeviceAnnouncement:
     WIRE = {"gid": "gid", "hsn": "hsn", "name": "name", "cat": "cat", "parent": "parent", "time": "time"}
 
     @classmethod
-    def from_dict(cls, data: dict) -> DeviceAnnouncement:
+    def from_dict(cls, data: dict[str, Any]) -> DeviceAnnouncement:
         values = {py: data[wire] for wire, py in cls.WIRE.items() if wire in data}
         extra = {k: v for k, v in data.items() if k not in cls.WIRE and k != "e"}
         return cls(**values, extra=extra)
@@ -213,7 +213,7 @@ class SwitchConfig:
     WIRE = {"g": "g", "b": "b", "cm": "cm", "pc": "pc", "hwm": "hwm", "swv": "swv", "hwv": "hwv", "hsn": "hsn", "cat": "cat", "pbmod": "pbmod", "pbmak": "pbmak", "pbb": "pbb", "pbmask": "pbmask", "rv": "rv"}
 
     @classmethod
-    def from_dict(cls, data: dict) -> SwitchConfig:
+    def from_dict(cls, data: dict[str, Any]) -> SwitchConfig:
         values = {py: data[wire] for wire, py in cls.WIRE.items() if wire in data}
         extra = {k: v for k, v in data.items() if k not in cls.WIRE and k != "e"}
         return cls(**values, extra=extra)

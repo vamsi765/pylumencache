@@ -4,7 +4,6 @@ from pathlib import Path
 
 import pytest
 import yaml
-
 from conftest import load_tool
 
 pytest.importorskip("jsonschema")

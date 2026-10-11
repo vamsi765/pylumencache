@@ -144,10 +144,12 @@ def commands_module(spec: dict) -> str:
         '"""',
         "from __future__ import annotations",
         "",
+        "from typing import Any",
+        "",
         "from .codes import Code",
         "",
         "",
-        "def _check_range(name: str, value, low, high) -> None:",
+        "def _check_range(name: str, value: float, low: float, high: float) -> None:",
         "    if not low <= value <= high:",
         '        raise ValueError(f"{name} must be between {low} and {high}, got {value}")',
     ]
@@ -161,7 +163,7 @@ def commands_module(spec: dict) -> str:
             ref = prop["$ref"].rsplit("/", 1)[1]
             params.append((wire, snake(ref), ref, schemas[ref]))
         sig = "".join(f"{py}: {PY_TYPES[sch['type']]} | None = None, " for _, py, _, sch in params)
-        out += ["", "", f"def {snake(key)}({'*, ' if params else ''}{sig.rstrip(', ')}) -> dict:"]
+        out += ["", "", f"def {snake(key)}({'*, ' if params else ''}{sig.rstrip(', ')}) -> dict[str, Any]:"]
         out.append(f'    """{m["summary"]} (e:{m["x-code"]}).')
         if params:
             out += ["", "    Wire keys: " + ", ".join(f"{py} -> {wire}" for wire, py, _, _ in params) + ".", ]
@@ -170,7 +172,7 @@ def commands_module(spec: dict) -> str:
             if "minimum" in sch:
                 out += [f"    if {py} is not None:",
                         f"        _check_range(\"{py}\", {py}, {sch['minimum']}, {sch['maximum']})"]
-        out.append(f"    msg: dict = {{\"e\": Code.{snake(key).upper()}.value}}")
+        out.append(f"    msg: dict[str, Any] = {{\"e\": Code.{snake(key).upper()}.value}}")
         for wire, py, _, _ in params:
             out += [f"    if {py} is not None:", f"        msg[\"{wire}\"] = {py}"]
         out.append("    return msg")
@@ -231,13 +233,14 @@ def models_module(spec: dict) -> str:
             fields.append((py, wire, prop_type(prop), wire in required))
         fields.sort(key=lambda f: not f[3])   # required fields first
         code_ = sch["properties"].get("e", {}).get("const")
-        out += ["", "", "@dataclass(frozen=True)", f"class {cls}:", f'    """Received message{f" with e:{code_}" if code_ is not None else ""}."""', ""]
+        with_code = f" with e:{code_}" if code_ is not None else ""
+        out += ["", "", "@dataclass(frozen=True)", f"class {cls}:", f'    """Received message{with_code}."""', ""]
         for py, _, typ, req in fields:
             out.append(f"    {py}: {typ}" if req else f"    {py}: {typ} | None = None")
         out.append("    extra: dict[str, Any] = field(default_factory=dict)")
         out += ["", f"    E = {code_}",
                 "    WIRE = {" + ", ".join(f'"{w}": "{py}"' for py, w, _, _ in fields) + "}",
-                "", "    @classmethod", "    def from_dict(cls, data: dict) -> "+cls+":",
+                "", "    @classmethod", "    def from_dict(cls, data: dict[str, Any]) -> "+cls+":",
                 "        values = {py: data[wire] for wire, py in cls.WIRE.items() if wire in data}",
                 "        extra = {k: v for k, v in data.items() if k not in cls.WIRE and k != \"e\"}",
                 "        return cls(**values, extra=extra)"]

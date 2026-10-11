@@ -26,6 +26,7 @@ python3 -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 python3 tools/gen_protocol.py --check
+ruff check . && mypy && pytest   # what CI runs
 ```
 
 ## Using the client

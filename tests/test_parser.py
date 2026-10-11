@@ -10,7 +10,8 @@ from pylumencache.protocol.parser import parse
 
 ROOT = Path(__file__).parent.parent
 SPEC = yaml.safe_load((ROOT / "docs" / "asyncapi.yaml").read_text(encoding="utf-8"))
-FIXTURES = [json.loads(line) for line in (Path(__file__).parent / "fixtures" / "messages.jsonl").read_text().splitlines()]
+FIXTURE_FILE = Path(__file__).parent / "fixtures" / "messages.jsonl"
+FIXTURES = [json.loads(line) for line in FIXTURE_FILE.read_text().splitlines()]
 
 # Where each received message is published, and the class the parser should give it.
 SPEC_MESSAGES = {
@@ -21,7 +22,9 @@ SPEC_MESSAGES = {
     "systemInfo": ("meta", "SystemInfo"),
     "deviceAnnouncement": ("dev/pp:1/pdm:2", "DeviceAnnouncementAt"),
 }
-HEARTBEAT_CLASSES = {"g:1": "PowerPlaneHeartbeat", "bay": "PdmHeartbeat", "opc": "ControllerHeartbeat", "uirgb": "SwitchHeartbeat"}
+HEARTBEAT_CLASSES = {
+    "g:1": "PowerPlaneHeartbeat", "bay": "PdmHeartbeat", "opc": "ControllerHeartbeat", "uirgb": "SwitchHeartbeat",
+}
 
 
 def spec_examples():
@@ -48,7 +51,8 @@ def test_recorded_message_parses_to_its_class_without_leftovers(fixture):
 
 
 def test_every_kind_of_message_has_a_fixture():
-    assert {f["expect"] for f in FIXTURES} >= {c for _, c in SPEC_MESSAGES.values() if c != "SystemInfo"} | set(HEARTBEAT_CLASSES.values())
+    wanted = {c for _, c in SPEC_MESSAGES.values() if c != "SystemInfo"} | set(HEARTBEAT_CLASSES.values())
+    assert {f["expect"] for f in FIXTURES} >= wanted
 
 
 def test_field_values_and_renamed_field():

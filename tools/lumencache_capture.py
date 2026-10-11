@@ -35,7 +35,7 @@ import threading
 import time
 import uuid
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import paho.mqtt.client as mqtt
 
@@ -225,7 +225,7 @@ def main() -> None:
             if obfuscator is not None:
                 payload = obfuscator.payload(payload)
             out.write(json.dumps({
-                "ts": datetime.now(timezone.utc).isoformat(),
+                "ts": datetime.now(UTC).isoformat(),
                 "dir": direction,
                 "topic": topic,
                 "retained": retained,
@@ -309,7 +309,7 @@ def main() -> None:
                 finally:
                     at_prompt.clear()
                 if line.lower() in ("quit", "exit"):
-                    print(f"\nGoodbye!")
+                    print("\nGoodbye!")
                     break
                 if line:
                     send(line)

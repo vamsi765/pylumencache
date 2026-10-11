@@ -20,7 +20,7 @@ import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from enum import IntEnum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .protocol.codes import Code
 from .protocol.models import (
@@ -30,7 +30,10 @@ from .protocol.models import (
     SwitchHeartbeat,
     ZoneEvent,
 )
-from .protocol.parser import CommandEcho, DeviceAnnouncementAt, Message
+from .protocol.parser import CommandEcho, DeviceAnnouncementAt, Heartbeat, Message
+
+if TYPE_CHECKING:
+    from .client import LumenCacheClient
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -58,6 +61,8 @@ class Device:
 
     @property
     def kind(self) -> Category | int | None:
+        if self.category is None:
+            return None
         try:
             return Category(self.category)
         except ValueError:
@@ -88,7 +93,7 @@ class SystemModel:
     devices: dict[int, Device] = field(default_factory=dict)
     zones: dict[int, LightState] = field(default_factory=dict)
     fixtures: dict[int, LightState] = field(default_factory=dict)
-    heartbeats: dict[int, Any] = field(default_factory=dict)   # GID -> latest heartbeat message
+    heartbeats: dict[int, Heartbeat] = field(default_factory=dict)   # GID -> latest heartbeat message
     heartbeat_times: dict[int, float] = field(default_factory=dict)   # GID -> time.monotonic()
     _listeners: list[Callable[[Change], Any]] = field(default_factory=list, repr=False)
 
@@ -107,7 +112,7 @@ class SystemModel:
         self._listeners.append(callback)
         return lambda: self._listeners.remove(callback)
 
-    def attach(self, client) -> Callable[[], None]:
+    def attach(self, client: LumenCacheClient) -> Callable[[], None]:
         """Feed the model from a LumenCacheClient. Returns a function that detaches it."""
         return client.add_listener(self.apply)
 
@@ -117,7 +122,7 @@ class SystemModel:
             self._device(message)
         elif isinstance(message, (PowerPlaneHeartbeat, PdmHeartbeat, ControllerHeartbeat, SwitchHeartbeat)):
             self._heartbeat(message)
-        elif isinstance(message, ZoneEvent):
+        elif isinstance(message, ZoneEvent) and message.z is not None:
             self._set_state(self.zones, "zone", message.z, LightState(
                 on=bool(message.on) if message.on is not None else None,
                 brightness=message.bri, color_temperature=message.cct, source="event"))
@@ -139,7 +144,7 @@ class SystemModel:
             self.devices[d.gid] = device
             self._notify("device", d.gid)
 
-    def _heartbeat(self, hb) -> None:
+    def _heartbeat(self, hb: Heartbeat) -> None:
         self.heartbeats[hb.g] = hb
         self.heartbeat_times[hb.g] = time.monotonic()
         device = self.devices.get(hb.g)
@@ -149,7 +154,7 @@ class SystemModel:
             self._notify("device", hb.g)
         self._notify("heartbeat", hb.g)
 
-    def _command(self, cmd: dict) -> None:
+    def _command(self, cmd: dict[str, Any]) -> None:
         code = cmd.get("e")
         if code not in (Code.ZONE_CONTROL, Code.DIRECT_CONTROL):
             return
@@ -163,7 +168,7 @@ class SystemModel:
         elif code == Code.DIRECT_CONTROL and cmd.get("g") is not None:
             self._set_state(self.fixtures, "fixture", cmd["g"], state)
 
-    def _set_state(self, table: dict, kind: str, key: int, new: LightState) -> None:
+    def _set_state(self, table: dict[int, LightState], kind: str, key: int, new: LightState) -> None:
         """Merge `new` into the stored state: fields the message did not carry keep their value."""
         old = table.get(key, LightState())
         merged = LightState(
@@ -181,7 +186,7 @@ class SystemModel:
 
     # --- keeping it across restarts ---------------------------------------
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """JSON-able copy of the devices and the last known states (not heartbeats)."""
         return {
             "devices": [asdict(d) for d in self.devices.values()],
@@ -190,7 +195,7 @@ class SystemModel:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> SystemModel:
+    def from_dict(cls, data: dict[str, Any]) -> SystemModel:
         model = cls()
         model.devices = {d["gid"]: Device(**d) for d in data.get("devices", [])}
         model.zones = {int(k): LightState(**v) for k, v in data.get("zones", {}).items()}

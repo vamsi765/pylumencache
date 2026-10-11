@@ -1,6 +1,5 @@
 """The capture tool must not leak real ids, free text, MACs or the Prefix Topic."""
 import pytest
-
 from conftest import load_tool
 
 pytest.importorskip("paho.mqtt.client")

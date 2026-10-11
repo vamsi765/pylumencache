@@ -17,6 +17,8 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - run: pip install -e ".[dev]"
+      - run: ruff check .
+      - run: mypy
       - name: Generated files are up to date and the spec is valid
         run: python tools/gen_protocol.py --check
       - run: pytest

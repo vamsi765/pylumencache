@@ -60,11 +60,11 @@ class LumenCacheClient:
         self._delays = reconnect_delays
         self._factory = client_factory or self._default_factory
         self._client: aiomqtt.Client | None = None
-        self._task: asyncio.Task | None = None
+        self._task: asyncio.Task[None] | None = None
         self._connected = asyncio.Event()
         self._listeners: list[Callable[[Message], Any]] = []
         self._connection_listeners: list[Callable[[bool], Any]] = []
-        self._pending: set[asyncio.Future] = set()   # async listeners still running
+        self._pending: set[asyncio.Future[Any]] = set()   # async listeners still running
 
     # --- public API -----------------------------------------------------
 
@@ -97,7 +97,7 @@ class LumenCacheClient:
     async def wait_connected(self, timeout: float | None = None) -> None:
         await asyncio.wait_for(self._connected.wait(), timeout)
 
-    async def send(self, message: dict) -> None:
+    async def send(self, message: dict[str, Any]) -> None:
         """Publish a command (for example from pylumencache.protocol.commands) to `<prefix>/cmd`."""
         if self._client is None:
             raise NotConnectedError("not connected to the broker")
@@ -164,7 +164,7 @@ class LumenCacheClient:
         for callback in list(self._listeners):
             self._call(callback, message)
 
-    def _call(self, callback: Callable, *args: Any) -> None:
+    def _call(self, callback: Callable[..., Any], *args: Any) -> None:
         """Run a listener; one that fails must not stop the others or the connection."""
         try:
             result = callback(*args)
@@ -176,7 +176,7 @@ class LumenCacheClient:
             self._pending.add(task)
             task.add_done_callback(self._async_listener_done)
 
-    def _async_listener_done(self, task: asyncio.Future) -> None:
+    def _async_listener_done(self, task: asyncio.Future[Any]) -> None:
         self._pending.discard(task)
         if not task.cancelled() and task.exception() is not None:
             _LOGGER.error("An async listener raised an exception", exc_info=task.exception())

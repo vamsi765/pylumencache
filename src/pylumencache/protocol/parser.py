@@ -36,7 +36,7 @@ class Empty:
 class CommandEcho:
     """A command published on `cmd`, echoed back by the broker (ours or another client's)."""
 
-    payload: dict
+    payload: dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -44,8 +44,8 @@ class SystemInfo:
     """System information from `meta`: the system id and the nested `meta` object, as sent."""
 
     sys: str
-    meta: dict
-    extra: dict
+    meta: dict[str, Any]
+    extra: dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -76,7 +76,7 @@ def relative_topic(prefix: str, topic: str) -> str:
     return topic[len(start):]
 
 
-def _heartbeat(data: dict) -> Heartbeat:
+def _heartbeat(data: dict[str, Any]) -> Heartbeat:
     if "uirgb" in data:
         return SwitchHeartbeat.from_dict(data)
     if "opc" in data:
@@ -86,7 +86,7 @@ def _heartbeat(data: dict) -> Heartbeat:
     return PowerPlaneHeartbeat.from_dict(data)
 
 
-def _by_code(data: dict):
+def _by_code(data: dict[str, Any]) -> Message | None:
     e = data.get("e")
     if e == Code.HEARTBEAT:
         return _heartbeat(data)
@@ -101,13 +101,13 @@ def _by_code(data: dict):
     return None
 
 
-def parse(topic: str, payload: bytes | str | dict) -> Message:
+def parse(topic: str, payload: bytes | str | dict[str, Any]) -> Message:
     """Parse one message. `topic` is relative to the Prefix Topic (`status`, `dev/pp:1/...`)."""
     if isinstance(payload, (bytes, bytearray)):
         try:
             payload = payload.decode("utf-8")
         except UnicodeDecodeError:
-            return UnknownMessage(topic, bytes(payload))
+            return UnknownMessage(topic, payload)
     if isinstance(payload, str):
         if payload == "":
             return Empty(topic)

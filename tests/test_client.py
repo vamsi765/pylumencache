@@ -1,6 +1,5 @@
 """The client against a fake broker connection (no network)."""
 import asyncio
-import json
 from types import SimpleNamespace
 
 import aiomqtt
