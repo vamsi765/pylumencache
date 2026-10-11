@@ -1,0 +1,923 @@
+# AsyncAPI description of the ReNetA MQTT protocol (version 3.0 of the spec).
+#
+# This file is the one place for message codes, payload shapes and what has been
+# observed. docs/protocol.md explains the protocol in prose and has its code tables
+# generated from this file: edit here, then run tools/gen_protocol.py (CI runs it
+# with --check).
+#
+# Our own metadata uses AsyncAPI "x-" extension fields:
+#   x-code          the "e" value of the message
+#   x-documented    the message is in LumenCache's Commands List (title = summary, notes = description)
+#   x-uses-store    the documented example persists with "store":1
+#   x-danger        payload matches that need confirmation before sending
+#   x-seen          what appeared in captures: {as, text}, one row of "Codes seen"
+#   x-tried         commands sent by hand and what came back (section 6 of protocol.md)
+#   x-names         on a field schema: the JSON field names it applies to
+#
+# Whether a command field is required is unknown unless the documentation says so,
+# so command payloads require only "e". Quote any key that YAML 1.1 reads as a
+# boolean (on, off, yes, no); tools/gen_protocol.py rejects them.
+
+asyncapi: 3.0.0
+info:
+  title: LumenCache ReNetA MQTT
+  version: 0.1.0
+  description: Observed MQTT protocol of a LumenCache ReNetA lighting system. Not an official specification; written
+    from captures of one system and LumenCache's Commands List. docs/protocol.md explains it in prose and has its
+    code tables generated from this file.
+servers:
+  production:
+    host: '{host}:8883'
+    protocol: mqtts
+    description: Hosted EMQX broker issued by LumenCache. TLS with a valid certificate; MQTT 5 works.
+    variables:
+      host:
+        description: Broker hostname from your LumenCache connection details
+    security:
+    - $ref: '#/components/securitySchemes/credentials'
+channels:
+  cmd:
+    address: '{prefix}/cmd'
+    parameters:
+      prefix:
+        $ref: '#/components/parameters/prefix'
+    description: Commands from the client. The broker echoes every command back to a subscribed client.
+    messages:
+      ping:
+        $ref: '#/components/messages/ping'
+      hail:
+        $ref: '#/components/messages/hail'
+      config:
+        $ref: '#/components/messages/config'
+      heartbeatRequest:
+        $ref: '#/components/messages/heartbeatRequest'
+      statusPull:
+        $ref: '#/components/messages/statusPull'
+      rebootOrReset:
+        $ref: '#/components/messages/rebootOrReset'
+      cardMode:
+        $ref: '#/components/messages/cardMode'
+      setGid:
+        $ref: '#/components/messages/setGid'
+      currentAndDefaults:
+        $ref: '#/components/messages/currentAndDefaults'
+      zoneManagement:
+        $ref: '#/components/messages/zoneManagement'
+      zoneControl:
+        $ref: '#/components/messages/zoneControl'
+      directControl:
+        $ref: '#/components/messages/directControl'
+      emptyMessage:
+        $ref: '#/components/messages/emptyMessage'
+  status:
+    address: '{prefix}/status'
+    parameters:
+      prefix:
+        $ref: '#/components/parameters/prefix'
+    messages:
+      heartbeat:
+        $ref: '#/components/messages/heartbeat'
+      zoneEvent:
+        $ref: '#/components/messages/zoneEvent'
+      errorReport:
+        $ref: '#/components/messages/errorReport'
+  errors:
+    address: '{prefix}/errors'
+    parameters:
+      prefix:
+        $ref: '#/components/parameters/prefix'
+    messages:
+      errorReport:
+        $ref: '#/components/messages/errorReport'
+  meta:
+    address: '{prefix}/meta'
+    parameters:
+      prefix:
+        $ref: '#/components/parameters/prefix'
+    messages:
+      systemInfo:
+        $ref: '#/components/messages/systemInfo'
+      hailReply:
+        $ref: '#/components/messages/hailReply'
+  dev:
+    address: '{prefix}/dev/{path}'
+    parameters:
+      prefix:
+        $ref: '#/components/parameters/prefix'
+      path:
+        description: Device path, for example pp:1/pdm:2/skt:4/scard:14
+    messages:
+      deviceAnnouncement:
+        $ref: '#/components/messages/deviceAnnouncement'
+operations:
+  sendPing:
+    action: send
+    channel:
+      $ref: '#/channels/cmd'
+    messages:
+    - $ref: '#/channels/cmd/messages/ping'
+  sendHail:
+    action: send
+    channel:
+      $ref: '#/channels/cmd'
+    messages:
+    - $ref: '#/channels/cmd/messages/hail'
+  sendConfig:
+    action: send
+    channel:
+      $ref: '#/channels/cmd'
+    messages:
+    - $ref: '#/channels/cmd/messages/config'
+  sendHeartbeatRequest:
+    action: send
+    channel:
+      $ref: '#/channels/cmd'
+    messages:
+    - $ref: '#/channels/cmd/messages/heartbeatRequest'
+  sendStatusPull:
+    action: send
+    channel:
+      $ref: '#/channels/cmd'
+    messages:
+    - $ref: '#/channels/cmd/messages/statusPull'
+  sendRebootOrReset:
+    action: send
+    channel:
+      $ref: '#/channels/cmd'
+    messages:
+    - $ref: '#/channels/cmd/messages/rebootOrReset'
+  sendCardMode:
+    action: send
+    channel:
+      $ref: '#/channels/cmd'
+    messages:
+    - $ref: '#/channels/cmd/messages/cardMode'
+  sendSetGid:
+    action: send
+    channel:
+      $ref: '#/channels/cmd'
+    messages:
+    - $ref: '#/channels/cmd/messages/setGid'
+  sendCurrentAndDefaults:
+    action: send
+    channel:
+      $ref: '#/channels/cmd'
+    messages:
+    - $ref: '#/channels/cmd/messages/currentAndDefaults'
+  sendZoneManagement:
+    action: send
+    channel:
+      $ref: '#/channels/cmd'
+    messages:
+    - $ref: '#/channels/cmd/messages/zoneManagement'
+  sendZoneControl:
+    action: send
+    channel:
+      $ref: '#/channels/cmd'
+    messages:
+    - $ref: '#/channels/cmd/messages/zoneControl'
+  sendDirectControl:
+    action: send
+    channel:
+      $ref: '#/channels/cmd'
+    messages:
+    - $ref: '#/channels/cmd/messages/directControl'
+  receiveHeartbeat:
+    action: receive
+    channel:
+      $ref: '#/channels/status'
+    messages:
+    - $ref: '#/channels/status/messages/heartbeat'
+  receiveZoneEvent:
+    action: receive
+    channel:
+      $ref: '#/channels/status'
+    messages:
+    - $ref: '#/channels/status/messages/zoneEvent'
+  receiveErrorOnStatus:
+    action: receive
+    channel:
+      $ref: '#/channels/status'
+    messages:
+    - $ref: '#/channels/status/messages/errorReport'
+  receiveErrorOnErrors:
+    action: receive
+    channel:
+      $ref: '#/channels/errors'
+    messages:
+    - $ref: '#/channels/errors/messages/errorReport'
+  receiveSystemInfo:
+    action: receive
+    channel:
+      $ref: '#/channels/meta'
+    messages:
+    - $ref: '#/channels/meta/messages/systemInfo'
+  receiveHailReply:
+    action: receive
+    channel:
+      $ref: '#/channels/meta'
+    messages:
+    - $ref: '#/channels/meta/messages/hailReply'
+  receiveDeviceAnnouncement:
+    action: receive
+    channel:
+      $ref: '#/channels/dev'
+    messages:
+    - $ref: '#/channels/dev/messages/deviceAnnouncement'
+  receiveEmptyMessage:
+    action: receive
+    channel:
+      $ref: '#/channels/cmd'
+    messages:
+    - $ref: '#/channels/cmd/messages/emptyMessage'
+components:
+  securitySchemes:
+    credentials:
+      type: userPassword
+      description: Username and password issued by LumenCache
+  parameters:
+    prefix:
+      description: The Prefix Topic issued by LumenCache, a path such as platform:na/<state>/<id>. All topics sit
+        under it.
+  schemas:
+    Gid:
+      type: integer
+      description: Device address (GID). Set with `e:32`
+      x-names: [g, gid]
+    ZoneId:
+      type: integer
+      description: Zone ID. Membership is set with `e:49`
+      x-names: [z, zid]
+    Hsn:
+      type: string
+      description: Permanent per-device serial, used before the device has a GID
+      x-names: [hsn]
+    Brightness:
+      type: number
+      description: Brightness, 0 to 100. A decimal (12.5) sent to GID 100 was accepted and the light dimmed from
+        50 (confirmed by eye); whether the 0.1% steps the plan wants are honored cannot be told by eye. 🔬 Out-of-range
+        values (500 was sent) are unconfirmed
+      x-names: [bri]
+      minimum: 0
+      maximum: 100
+      x-unit: percent
+    ColorTemperature:
+      type: integer
+      description: Color temperature in kelvin
+      x-names: [cct]
+      x-unit: kelvin
+    Fade:
+      type: integer
+      description: Transition time in milliseconds
+      x-names: [fade]
+      x-unit: ms
+    DriveCurrent:
+      type: integer
+      description: Drive current in milliamps
+      x-names: [ma]
+      x-unit: mA
+    Store:
+      type: integer
+      description: 1 saves the setting through a reboot; without it the setting reverts
+      x-names: [store]
+    Action:
+      type: integer
+      description: Action code inside a multi-purpose command (`e:49`)
+      x-names: [a]
+    SubCode:
+      type: integer
+      description: 'Sub-code (`e:15`: 0 reboot, 1 factory reset)'
+      x-names: [c]
+    CardMode:
+      type: integer
+      description: Socket card mode (`e:18`)
+      x-names: [cm]
+    PowerPlaneHeartbeat:
+      type: object
+      required: [e, g, hsn, swv, hwv, time, heap]
+      properties:
+        e:
+          const: 139
+        g:
+          type: integer
+          description: GID of the PowerPlane
+        hsn:
+          type: string
+        swv:
+          type: string
+        hwv:
+          type: string
+        time:
+          type: integer
+          description: Uptime in milliseconds
+        heap:
+          type: integer
+          description: Free memory (bytes). Unit inferred
+      additionalProperties: false
+      description: Every 5 minutes. After a boot the first one arrives 300 s later. Required and additional fields
+        describe what every heartbeat of this kind carried, which also tells the shapes apart.
+    PdmHeartbeat:
+      type: object
+      required: [e, g, bay, hsn, swv, hwv, time, heap, temp, rh]
+      properties:
+        e:
+          const: 139
+        g:
+          type: integer
+          description: GID of the PDM
+        bay:
+          type: integer
+          description: Unknown (3 in every heartbeat)
+        hsn:
+          type: string
+        swv:
+          type: string
+        hwv:
+          type: string
+        time:
+          type: integer
+          description: Uptime in milliseconds
+        heap:
+          type: integer
+        temp:
+          type: number
+          description: Degrees Celsius. Unit inferred
+        rh:
+          type: number
+          description: Relative humidity in percent. Unit inferred
+      description: Every 60 s.
+    ControllerHeartbeat:
+      type: object
+      required: [e, g, opc, mode, 12v, term, heap, txrx, uptime, temp]
+      properties:
+        e:
+          const: 139
+        g:
+          const: 100
+          description: 100 is not a GID in the inventory; the controller is inferred
+        opc:
+          type: integer
+        mode:
+          type: integer
+        12v:
+          type: integer
+        term:
+          type: integer
+        heap:
+          type: integer
+        txrx:
+          type: array
+          items:
+            type: integer
+          minItems: 4
+          maxItems: 4
+          description: Unknown. Possibly traffic counters since the last heartbeat
+        uptime:
+          type: integer
+          description: Uptime in seconds
+        temp:
+          type: number
+      description: 'Not periodic: sent after boot and in the minutes after a light command, with widening gaps.'
+  messages:
+    ping:
+      name: ping
+      title: Ping
+      summary: Ping
+      description: '"Are you there" check for a GID'
+      x-code: 8
+      x-documented: true
+      payload:
+        type: object
+        required: [e]
+        properties:
+          e:
+            const: 8
+          g:
+            $ref: '#/components/schemas/Gid'
+      examples:
+      - payload: {e: 8, g: 54}
+      x-tried:
+      - sent: '`g` 54, 2 and 14'
+        result: No reply
+      x-seen:
+        as: command on `cmd`
+        text: Only the echo and the empty message followed (section 6)
+    hail:
+      name: hail
+      title: Hail / GID lookup
+      summary: Hail / GID lookup
+      description: Returns what device sits at that GID. With `g:0`, lists devices still at GID 0 by `hsn`
+      x-code: 9
+      x-documented: true
+      payload:
+        type: object
+        required: [e]
+        properties:
+          e:
+            const: 9
+          g:
+            $ref: '#/components/schemas/Gid'
+      examples:
+      - payload: {e: 9, g: 54}
+      x-tried:
+      - sent: '`g` 0 (hail)'
+        result: 'One reply: `e:137` on `meta` (section 5.4). An earlier hail got no reply'
+      - sent: '`g` 54, twice; `g` 14'
+        result: No reply
+      x-seen:
+        as: command on `cmd`
+        text: 'Hail: `{"e":9,"g":0}` lists devices still at GID 0. It answered once, as `e:137` on `meta` (section
+          5.4). `e:9` with a GID (54, 14) got no reply'
+    config:
+      name: config
+      title: Config
+      summary: Config
+      description: Dumps the device's current configuration. 🔬 Reply format
+      x-code: 10
+      x-documented: true
+      payload:
+        type: object
+        required: [e]
+        properties:
+          e:
+            const: 10
+          g:
+            $ref: '#/components/schemas/Gid'
+      examples:
+      - payload: {e: 10, g: 54}
+      x-tried:
+      - sent: '`g` 54, 2 and 14'
+        result: No reply
+      x-seen:
+        as: command on `cmd`
+        text: Only the echo and the empty message followed (section 6)
+    heartbeatRequest:
+      name: heartbeatRequest
+      title: Heartbeat request
+      summary: Heartbeat request
+      description: Checks the device is still checking in
+      x-code: 11
+      x-documented: true
+      payload:
+        type: object
+        required: [e]
+        properties:
+          e:
+            const: 11
+          g:
+            $ref: '#/components/schemas/Gid'
+      examples:
+      - payload: {e: 11, g: 54}
+      x-tried:
+      - sent: '`g` 54, 2 and 1'
+        result: No reply, and no extra heartbeat
+      x-seen:
+        as: command on `cmd`
+        text: Only the echo and the empty message followed (section 6)
+    statusPull:
+      name: statusPull
+      title: Status pull
+      summary: Status pull
+      description: Forces the device to report status now, instead of waiting for the automatic push on `status`
+      x-code: 13
+      x-documented: true
+      payload:
+        type: object
+        required: [e]
+        properties:
+          e:
+            const: 13
+          g:
+            $ref: '#/components/schemas/Gid'
+      examples:
+      - payload: {e: 13, g: 54}
+      x-tried:
+      - sent: '`g` 54, 2 and 14'
+        result: No reply, and no extra status
+      x-seen:
+        as: command on `cmd`
+        text: Only the echo and the empty message followed (section 6)
+    rebootOrReset:
+      name: rebootOrReset
+      title: Reboot / factory reset
+      summary: Reboot / factory reset
+      description: '`c` is the sub-code. Destructive'
+      x-code: 15
+      x-documented: true
+      payload:
+        type: object
+        required: [e]
+        properties:
+          e:
+            const: 15
+          g:
+            $ref: '#/components/schemas/Gid'
+          c:
+            $ref: '#/components/schemas/SubCode'
+          store:
+            $ref: '#/components/schemas/Store'
+      examples:
+      - name: reboot
+        payload: {e: 15, g: 54, c: 0}
+      - name: factory reset
+        payload: {e: 15, g: 54, c: 1, store: 1}
+      x-uses-store: true
+      x-danger:
+      - when: {c: 1}
+        level: confirm
+        reason: factory reset
+    cardMode:
+      name: cardMode
+      title: Card mode
+      summary: Card mode
+      description: Sets a socket card's operating mode. 🔬 Mode values
+      x-code: 18
+      x-documented: true
+      payload:
+        type: object
+        required: [e]
+        properties:
+          e:
+            const: 18
+          g:
+            $ref: '#/components/schemas/Gid'
+          cm:
+            $ref: '#/components/schemas/CardMode'
+      examples:
+      - payload: {e: 18, g: 54, cm: 3}
+    setGid:
+      name: setGid
+      title: Set GID
+      summary: Set GID
+      description: Gives that `hsn` the address 60
+      x-code: 32
+      x-documented: true
+      payload:
+        type: object
+        required: [e]
+        properties:
+          e:
+            const: 32
+          gid:
+            $ref: '#/components/schemas/Gid'
+          hsn:
+            $ref: '#/components/schemas/Hsn'
+          store:
+            $ref: '#/components/schemas/Store'
+      examples:
+      - payload: {e: 32, gid: 60, hsn: <hsn>, store: 1}
+      x-uses-store: true
+    currentAndDefaults:
+      name: currentAndDefaults
+      title: Current and defaults
+      summary: Current and defaults
+      description: Sets drive current in mA. The text also mentions stored warm, cool, brightness and CCT defaults.
+        🔬 Their field names
+      x-code: 36
+      x-documented: true
+      payload:
+        type: object
+        required: [e]
+        properties:
+          e:
+            const: 36
+          g:
+            $ref: '#/components/schemas/Gid'
+          ma:
+            $ref: '#/components/schemas/DriveCurrent'
+          store:
+            $ref: '#/components/schemas/Store'
+      examples:
+      - payload: {e: 36, g: 54, ma: 700, store: 1}
+      x-uses-store: true
+    zoneManagement:
+      name: zoneManagement
+      title: Zone management
+      summary: Zone management
+      description: '`a` is the action: 5 add (with optional zone defaults `bri` and `cct`), 6 delete, 9 list zones
+        (example `{"e":49,"g":54,"a":9}`). The text also mentions "inspect". 🔬 Other actions, and how to list the
+        members of a zone'
+      x-code: 49
+      x-documented: true
+      payload:
+        type: object
+        required: [e]
+        properties:
+          e:
+            const: 49
+          g:
+            $ref: '#/components/schemas/Gid'
+          a:
+            $ref: '#/components/schemas/Action'
+          zid:
+            $ref: '#/components/schemas/ZoneId'
+          bri:
+            $ref: '#/components/schemas/Brightness'
+          cct:
+            $ref: '#/components/schemas/ColorTemperature'
+          store:
+            $ref: '#/components/schemas/Store'
+      examples:
+      - payload: {e: 49, g: 54, a: 5, zid: 200, bri: 75, cct: 3000, store: 1}
+      x-uses-store: true
+      x-tried:
+      - sent: '`g` 2, `a` 9 (list zones)'
+        result: No reply
+      x-seen:
+        as: command on `cmd`
+        text: '`{"e":49,"g":2,"a":9}` (list zones) got no reply'
+    zoneControl:
+      name: zoneControl
+      title: Zone control
+      summary: Zone control
+      description: Whole zone at once. The tutorial's sliders send `{"e":56,"z":<zone>,"bri":<0-100>}`, and `bri`
+        0 turns the zone off
+      x-code: 56
+      x-documented: true
+      payload:
+        type: object
+        required: [e]
+        properties:
+          e:
+            const: 56
+          z:
+            $ref: '#/components/schemas/ZoneId'
+          bri:
+            $ref: '#/components/schemas/Brightness'
+          cct:
+            $ref: '#/components/schemas/ColorTemperature'
+          fade:
+            $ref: '#/components/schemas/Fade'
+      examples:
+      - payload: {e: 56, z: 200, bri: 50, cct: 4000, fade: 800}
+      x-tried:
+      - sent: '`z` 250, `bri` 50, `cct` 4000, `fade` 800'
+        result: No reply and no `e:56` status event. 🔬 Effect on the lights not reported
+    directControl:
+      name: directControl
+      title: Direct control
+      summary: Direct control
+      description: One socket card
+      x-code: 57
+      x-documented: true
+      payload:
+        type: object
+        required: [e]
+        properties:
+          e:
+            const: 57
+          g:
+            $ref: '#/components/schemas/Gid'
+          bri:
+            $ref: '#/components/schemas/Brightness'
+          cct:
+            $ref: '#/components/schemas/ColorTemperature'
+          fade:
+            $ref: '#/components/schemas/Fade'
+      examples:
+      - payload: {e: 57, g: 54, bri: 100, cct: 3000, fade: 1000}
+      x-tried:
+      - sent: '`g` 100, 14, 10 and 0; `bri` 0, 10, 12.5, 50, 100 and 500; `cct` 2700 to 5000; `fade` 800 and 1000'
+        result: To GID 100 the lights changed to the commanded brightness (confirmed by eye), and 12.5 after 50
+          dimmed them. 🔬 Effect for GIDs 14, 10 and 0 not reported. No state message, no error
+      x-seen:
+        as: command on `cmd`
+        text: Direct control. Sent to GIDs 100, 14, 10 and 0. To GID 100 the lights followed the command (confirmed
+          by eye); the effect for the other GIDs is not reported. No state message or error was published
+    heartbeat:
+      name: heartbeat
+      title: Heartbeat
+      summary: Heartbeat
+      description: 'Liveness message with three shapes, by source: the PowerPlane, the PDM and the controller.'
+      x-code: 139
+      x-seen:
+        as: status
+        text: Periodic heartbeat from the PowerPlane, the PDM and the controller (section 5.1)
+      payload:
+        oneOf:
+        - $ref: '#/components/schemas/PowerPlaneHeartbeat'
+        - $ref: '#/components/schemas/PdmHeartbeat'
+        - $ref: '#/components/schemas/ControllerHeartbeat'
+      examples:
+      - name: PowerPlane
+        payload: {e: 139, g: 1, hsn: <hsn>, swv: 01.00.02, hwv: '01.00', time: 300737, heap: 6181804}
+      - name: PDM
+        payload: {e: 139, g: 2, bay: 3, hsn: <hsn>, swv: 01.00.12m, hwv: '02.05', time: 60182, heap: 8480948, temp: 31.5,
+          rh: 35.71}
+      - name: Controller
+        payload:
+          e: 139
+          g: 100
+          opc: 2
+          mode: 3
+          12v: 1
+          term: 1
+          heap: 13416
+          txrx:
+          - 165
+          - 0
+          - 278
+          - 165
+          uptime: 75
+          temp: 30.6
+    zoneEvent:
+      name: zoneEvent
+      title: Zone event
+      summary: Zone event
+      description: A zone turned on or off, usually by a wall switch. The "on" form carries brightness and color
+        temperature.
+      x-code: 56
+      x-seen:
+        as: status; command on `cmd`
+        text: 'Zone on/off/brightness/color event. Sent as a command to zone 250: no reply'
+      payload:
+        type: object
+        required: [e]
+        properties:
+          e:
+            const: 56
+          z:
+            $ref: '#/components/schemas/ZoneId'
+          'on':
+            enum:
+            - 0
+            - 1
+            description: 0 off, 1 on
+          bri:
+            $ref: '#/components/schemas/Brightness'
+          cct:
+            $ref: '#/components/schemas/ColorTemperature'
+          dev:
+            type: integer
+            description: GID of the device that caused the event (a switch). Inferred
+          g:
+            type: integer
+            description: 65534 in every event; meaning unknown
+      examples:
+      - name: 'off'
+        payload: {e: 56, z: 250, 'on': 0, dev: 12, g: 65534}
+      - name: 'on'
+        payload: {e: 56, z: 250, 'on': 1, bri: 100, cct: 5000, dev: 12, g: 65534}
+    errorReport:
+      name: errorReport
+      title: Error report
+      summary: Error report
+      description: Published on both status and errors with the same payload. The meaning of the codes is unknown.
+      x-code: 254
+      x-seen:
+        as: status and `errors`
+        text: Error report. Seen once, shortly after a restart
+      payload:
+        type: object
+        required: [e]
+        properties:
+          e:
+            const: 254
+          g:
+            type: integer
+            description: 100 in the one report seen; not a GID in the inventory
+          err:
+            type: integer
+          v:
+            type: integer
+      examples:
+      - payload: {e: 254, g: 100, err: 38, v: 254}
+    hailReply:
+      name: hailReply
+      title: Uncommissioned device
+      summary: Uncommissioned device
+      description: 'Reply to a hail: a device still at GID 0. Published on meta.'
+      x-code: 137
+      x-seen:
+        as: meta
+        text: 'Reply to a hail: a device at GID 0 (section 5.4)'
+      payload:
+        type: object
+        required: [e]
+        properties:
+          e:
+            const: 137
+          g:
+            const: 0
+          hsn:
+            $ref: '#/components/schemas/Hsn'
+          b:
+            type: integer
+            description: Unknown
+          pc:
+            type: integer
+            description: Unknown
+          cat:
+            type: integer
+            description: Device category (37 is a socket card)
+          hwm:
+            type: string
+            description: 'Hardware model: part number and name'
+      examples:
+      - payload: {e: 137, g: 0, hsn: <hsn>, b: 0, pc: 2, cat: 37, hwm: 90003-200__SC-PV2-50W}
+    systemInfo:
+      name: systemInfo
+      title: System information
+      summary: System information
+      description: Published once after the system connects, before the device list. The name and address fields
+        are personal data when filled in.
+      payload:
+        type: object
+        required: [sys]
+        properties:
+          sys:
+            type: string
+            description: System ID. Likely stable; to be confirmed
+          meta:
+            type: object
+            required: []
+            properties:
+              plt:
+                type: string
+              cat:
+                type: integer
+              sys_info:
+                type: object
+                required: []
+                properties:
+                  sys:
+                    type: string
+                  name:
+                    type: string
+                  addr1:
+                    type: string
+                  addr2:
+                    type: string
+                  zip:
+                    type: string
+                  phone:
+                    type: string
+                  note:
+                    type: string
+                  cat:
+                    type: integer
+              org_info:
+                type: object
+                required: []
+                properties:
+                  org:
+                    type: integer
+                  name:
+                    type: string
+                  cat:
+                    type: integer
+      examples:
+      - payload:
+          sys: <sys>
+          meta:
+            plt: ''
+            cat: 0
+            sys_info:
+              sys: <sys>
+              name: ''
+              addr1: ''
+              addr2: ''
+              zip: ''
+              phone: ''
+              note: ''
+              cat: 2
+            org_info:
+              org: 65535
+              name: ''
+              cat: 1
+    deviceAnnouncement:
+      name: deviceAnnouncement
+      title: Device announcement
+      summary: Device announcement
+      description: 'One message per device, published once after the system connects. The topic path mirrors the
+        wiring: each segment is <type>:<gid>. The PowerPlane''s message has no hsn.'
+      payload:
+        type: object
+        required: [gid]
+        properties:
+          gid:
+            $ref: '#/components/schemas/Gid'
+          hsn:
+            $ref: '#/components/schemas/Hsn'
+          name:
+            type: string
+          cat:
+            type: integer
+            description: 'Device category: 32 PowerPlane, 35 PDM, 36 socket, 37 socket card, 40 wall switch'
+          parent:
+            type: integer
+            description: GID of the parent device; 65535 for none, 0 not yet assigned
+          time:
+            type: integer
+            description: Unknown; not a clock
+      examples:
+      - payload: {gid: 14, hsn: <hsn>, name: SC-CC2-50W, cat: 37, parent: 4, time: 1505366}
+    emptyMessage:
+      name: emptyMessage
+      title: Empty message
+      summary: Empty message
+      description: Published on cmd 0.14 to 0.4 s after the broker echo of every command, even for GIDs that do
+        not exist. Not a success acknowledgement; meaning unknown.
+      payload: {type: string, maxLength: 0}
+      examples:
+      - payload: ''

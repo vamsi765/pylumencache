@@ -46,21 +46,27 @@ This also happened for GID 54 and GID 0, which are not devices on this system, s
 
 Codes seen in the captures:
 
+<!-- BEGIN GENERATED codes-seen: edit docs/asyncapi.yaml, then run tools/gen_protocol.py -->
 | `e` | Seen as | Meaning |
 |---|---|---|
-| 8, 10, 11, 13 | command on `cmd` | Sent for GID 54 (not a device here) and for GIDs 1, 2 and 14. Only the echo and the empty message followed, every time (section 6) |
+| 8 | command on `cmd` | Only the echo and the empty message followed (section 6) |
 | 9 | command on `cmd` | Hail: `{"e":9,"g":0}` lists devices still at GID 0. It answered once, as `e:137` on `meta` (section 5.4). `e:9` with a GID (54, 14) got no reply |
+| 10 | command on `cmd` | Only the echo and the empty message followed (section 6) |
+| 11 | command on `cmd` | Only the echo and the empty message followed (section 6) |
+| 13 | command on `cmd` | Only the echo and the empty message followed (section 6) |
 | 49 | command on `cmd` | `{"e":49,"g":2,"a":9}` (list zones) got no reply |
 | 56 | status; command on `cmd` | Zone on/off/brightness/color event. Sent as a command to zone 250: no reply |
 | 57 | command on `cmd` | Direct control. Sent to GIDs 100, 14, 10 and 0. To GID 100 the lights followed the command (confirmed by eye); the effect for the other GIDs is not reported. No state message or error was published |
 | 137 | meta | Reply to a hail: a device at GID 0 (section 5.4) |
 | 139 | status | Periodic heartbeat from the PowerPlane, the PDM and the controller (section 5.1) |
 | 254 | status and `errors` | Error report. Seen once, shortly after a restart |
+<!-- END GENERATED codes-seen -->
 
 ### Documented commands
 
 From LumenCache's Commands List. All are JSON published on `cmd`. The examples use GID 54 or zone 200 from that document. Note that parameter names differ between commands (`g` or `gid`, `z` or `zid`), so each command is built with exactly the names shown.
 
+<!-- BEGIN GENERATED documented-commands: edit docs/asyncapi.yaml, then run tools/gen_protocol.py -->
 | `e` | Command | Documented example | Notes |
 |---|---|---|---|
 | 8 | Ping | `{"e":8,"g":54}` | "Are you there" check for a GID |
@@ -75,9 +81,11 @@ From LumenCache's Commands List. All are JSON published on `cmd`. The examples u
 | 49 | Zone management | `{"e":49,"g":54,"a":5,"zid":200,"bri":75,"cct":3000,"store":1}` | `a` is the action: 5 add (with optional zone defaults `bri` and `cct`), 6 delete, 9 list zones (example `{"e":49,"g":54,"a":9}`). The text also mentions "inspect". 🔬 Other actions, and how to list the members of a zone |
 | 56 | Zone control | `{"e":56,"z":200,"bri":50,"cct":4000,"fade":800}` | Whole zone at once. The tutorial's sliders send `{"e":56,"z":<zone>,"bri":<0-100>}`, and `bri` 0 turns the zone off |
 | 57 | Direct control | `{"e":57,"g":54,"bri":100,"cct":3000,"fade":1000}` | One socket card |
+<!-- END GENERATED documented-commands -->
 
 ### Parameters
 
+<!-- BEGIN GENERATED parameters: edit docs/asyncapi.yaml, then run tools/gen_protocol.py -->
 | Name | Meaning |
 |---|---|
 | `g` / `gid` | Device address (GID). Set with `e:32` |
@@ -91,6 +99,7 @@ From LumenCache's Commands List. All are JSON published on `cmd`. The examples u
 | `a` | Action code inside a multi-purpose command (`e:49`) |
 | `c` | Sub-code (`e:15`: 0 reboot, 1 factory reset) |
 | `cm` | Socket card mode (`e:18`) |
+<!-- END GENERATED parameters -->
 
 ## 4. Inventory
 
@@ -247,6 +256,7 @@ One device answered. 🔬 It is not in the inventory under a GID of its own. The
 
 Commands sent from the capture tool in interactive mode. All of them got the echo and the empty `cmd` message described in section 2. The table lists anything beyond that.
 
+<!-- BEGIN GENERATED commands-tried: edit docs/asyncapi.yaml, then run tools/gen_protocol.py -->
 | Command | Sent | Result |
 |---|---|---|
 | `e:8` | `g` 54, 2 and 14 | No reply |
@@ -258,6 +268,7 @@ Commands sent from the capture tool in interactive mode. All of them got the ech
 | `e:49` | `g` 2, `a` 9 (list zones) | No reply |
 | `e:56` | `z` 250, `bri` 50, `cct` 4000, `fade` 800 | No reply and no `e:56` status event. 🔬 Effect on the lights not reported |
 | `e:57` | `g` 100, 14, 10 and 0; `bri` 0, 10, 12.5, 50, 100 and 500; `cct` 2700 to 5000; `fade` 800 and 1000 | To GID 100 the lights changed to the commanded brightness (confirmed by eye), and 12.5 after 50 dimmed them. 🔬 Effect for GIDs 14, 10 and 0 not reported. No state message, no error |
+<!-- END GENERATED commands-tried -->
 
 So of the query commands only the hail answers. None of the others republished the inventory, even for real GIDs, so P-6 is still open. They may need something we have not sent, or answer on a path we do not see. GID 54 in the Commands List examples is not a device on this system (GIDs are 1 to 15, plus 100). Not tried: `e:36`, `e:32`, `e:18`, `e:15` (they change or persist settings).
 
@@ -321,6 +332,8 @@ IDs refer to the register in the implementation plan.
 - **State.** Zone events are the only state seen so far. Per-fixture state needs zone membership (`e:49`) and may need other messages.
 
 ## 10. Updating this document
+
+The message definitions (codes, payload shapes, what was seen and tried) live in `asyncapi.yaml` in this folder, an AsyncAPI 3.0 description. The code tables in this document are generated from it: edit the YAML, then run `python3 tools/gen_protocol.py` (needs `pip install pyyaml jsonschema`). `--check` fails if the tables are stale, if an example does not match its schema, or if a key such as an unquoted `on` was read as a boolean. The prose here stays hand-written.
 
 After a firmware or backend update: record a new capture, scrub identifiers, diff it against the stored fixtures, and update this document and the fixtures from the result. Never commit a raw capture.
 

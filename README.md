@@ -158,7 +158,7 @@ ha-lumencache/
 
 ### Capturing the protocol
 
-The protocol is documented from real traffic, in `docs/protocol.md`. The library's CLI includes a capture command (`lumencache capture`, *planned*) that records everything the system publishes, read-only by default, and a diff command that compares a new capture with the stored fixtures. After a firmware or backend update, re-capture, diff, and refresh the spec and fixtures.
+The protocol is documented from real traffic, in `docs/protocol.md`, with the message definitions in `docs/asyncapi.yaml` (an AsyncAPI description; the code tables in the markdown are generated from it by `tools/gen_protocol.py`). The library's CLI includes a capture command (`lumencache capture`, *planned*) that records everything the system publishes, read-only by default, and a diff command that compares a new capture with the stored fixtures. After a firmware or backend update, re-capture, diff, and refresh the spec and fixtures.
 
 Until the CLI exists, `tools/lumencache_capture.py` does the same job, and can also send commands by hand:
 
