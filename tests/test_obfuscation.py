@@ -1,9 +1,7 @@
 """The capture tool must not leak real ids, free text, MACs or the Prefix Topic."""
 import pytest
-from conftest import load_tool
 
-pytest.importorskip("paho.mqtt.client")
-Obfuscator = load_tool("lumencache_capture").Obfuscator
+from pylumencache.obfuscate import Obfuscator
 
 PREFIX = "platform:na/example/abc123"
 

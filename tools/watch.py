@@ -6,16 +6,19 @@ Run:     export LC_HOST=<host> LC_USER=<user> LC_PASS=<pass> LC_TOPIC_PREFIX='<P
          python3 tools/watch.py [--hail] [--duration 60]
 
 With --replay FILE it connects to a fake system that replays a capture instead of a real one, and
-needs no LC_* variables. Read-only unless --hail is given, which sends one hail (e:9, g:0) to list
+needs no LC_* variables. Ids and serials are replaced with fakes on screen (--no-obfuscate shows them).
+Read-only unless --hail is given, which sends one hail (e:9, g:0) to list
 uncommissioned devices.
 """
 import argparse
 import asyncio
+import dataclasses
 import logging
 import os
 
 from pylumencache.client import LumenCacheClient
 from pylumencache.fake import FakeController
+from pylumencache.obfuscate import Obfuscator
 from pylumencache.protocol import commands
 
 
@@ -25,6 +28,8 @@ async def main() -> None:
     p.add_argument("--duration", type=float, default=60,
                    help="seconds to run before exiting (default 60); 0 runs until Ctrl-C")
     p.add_argument("--no-verify-tls", action="store_true", help="do not verify the broker certificate")
+    p.add_argument("--no-obfuscate", action="store_true",
+                   help="show real ids, serials and addresses (they are replaced with fakes by default)")
     p.add_argument("--replay", metavar="FILE", help="replay a capture file instead of connecting to a system")
     p.add_argument("-v", "--verbose", action="store_true", help="also log every message received and sent")
     args = p.parse_args()
@@ -32,6 +37,7 @@ async def main() -> None:
                         level=logging.DEBUG if args.verbose else logging.INFO)
     logging.getLogger("asyncio").setLevel(logging.WARNING)
 
+    args.prefix = "replay" if args.replay else os.environ.get("LC_TOPIC_PREFIX", "")
     if args.replay:
         controller = FakeController.from_file(args.replay, "replay")
         client = LumenCacheClient("replay", "replay", client_factory=controller.factory)
@@ -51,8 +57,21 @@ def real_client(args: argparse.Namespace) -> LumenCacheClient:
     )
 
 
+def printer(prefix: str, obfuscate: bool):
+    """A listener that prints each message, with ids replaced by stable fakes unless told otherwise."""
+    obfuscator = Obfuscator(prefix) if obfuscate else None
+
+    def show(message: object) -> None:
+        if obfuscator and dataclasses.is_dataclass(message):
+            fields = obfuscator.payload(dataclasses.asdict(message))
+            print(f"{type(message).__name__}({', '.join(f'{k}={v!r}' for k, v in fields.items())})")
+        else:
+            print(message)
+    return show
+
+
 async def run(client: LumenCacheClient, args: argparse.Namespace) -> None:
-    client.add_listener(print)
+    client.add_listener(printer(args.prefix, not args.no_obfuscate))
     client.add_connection_listener(lambda up: print("connected" if up else "disconnected"))
     await client.start()
     await client.wait_connected(30)

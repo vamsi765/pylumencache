@@ -16,7 +16,8 @@ Unofficial Python library for [LumenCache](https://www.lumencache.com) ReNetA li
 | `src/pylumencache/client.py` | Async MQTT client: connects over TLS, keeps the connection up, delivers parsed messages to listeners and publishes commands |
 | `src/pylumencache/inventory.py` | `SystemModel`: the device tree from `dev/...` announcements, heartbeats, and the last known state of zones and lights (from switch events and echoed commands). Saves to and loads from JSON, because the system does not retain its inventory |
 | `src/pylumencache/fake.py` | `FakeController`: a fake ReNetA system that replays a capture, for developing and testing without lights (pass `controller.factory` as the client's `client_factory`) |
-| `tools/watch.py` | Prints every parsed message, from a real system or, with `--replay FILE`, from a capture |
+| `src/pylumencache/obfuscate.py` | `Obfuscator`: replaces ids, serials, free text and MACs with stable fakes. Used by the capture tool for its files and by `watch.py` for the screen |
+| `tools/watch.py` | Prints every parsed message, from a real system or, with `--replay FILE`, from a capture. Ids are replaced with fakes unless `--no-obfuscate` |
 | `tools/gen_protocol.py` | Regenerates the tables in `protocol.md` and `codes.py`, `commands.py` and `models.py`; `--check` fails when either is stale |
 | `tools/lumencache_capture.py` | Records and sends MQTT traffic |
 
