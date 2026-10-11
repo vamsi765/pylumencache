@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Regenerate the code tables in docs/protocol.md from docs/asyncapi.yaml.
+"""Regenerate the code tables in docs/protocol.md and the code constants in
+src/pylumencache/protocol/codes.py from docs/asyncapi.yaml.
 
 docs/asyncapi.yaml (an AsyncAPI 3.0 document) is the source for message codes,
 payload shapes and observations. The tables between the GENERATED markers in
-docs/protocol.md are written by this script; the rest of that document is
-hand-written. The script also checks the source: no key that YAML read as a
+docs/protocol.md and the whole of codes.py are written by this script; the rest
+of protocol.md is hand-written. The script also checks the source: no key that YAML read as a
 boolean (such as an unquoted `on`), and every message example must match its
 payload schema.
 
@@ -28,6 +29,7 @@ except ImportError:  # validation of examples is skipped without it
 ROOT = Path(__file__).resolve().parent.parent
 SPEC_PATH = ROOT / "docs" / "asyncapi.yaml"
 DOC_PATH = ROOT / "docs" / "protocol.md"
+CODES_PATH = ROOT / "src" / "pylumencache" / "protocol" / "codes.py"
 
 BLOCK = re.compile(
     r"(<!-- BEGIN GENERATED (?P<name>[\w-]+)[^\n]*-->\n)(?P<body>.*?)(<!-- END GENERATED (?P=name) -->)",
@@ -92,6 +94,31 @@ RENDERERS = {
 }
 
 
+def codes_module(spec: dict) -> str:
+    """Python source for the Code enum: one member per `e` code, named after its first message."""
+    members = {}
+    for m in messages(spec):
+        members.setdefault(m["x-code"], m)
+    lines = [
+        '"""Message codes (the `e` field). Generated from docs/asyncapi.yaml by tools/gen_protocol.py; do not edit."""',
+        "from enum import IntEnum",
+        "",
+        "",
+        "class Code(IntEnum):",
+        '    """Values of the `e` field.',
+        "",
+        "    Where the YAML has several messages for one code (a command and its reply),",
+        "    the member is named after the first.",
+        '    """',
+        "",
+    ]
+    for code_, m in members.items():
+        name = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", next(
+            k for k, v in spec["components"]["messages"].items() if v is m)).upper()
+        lines.append(f"    {name} = {code_}")
+    return "\n".join(lines) + "\n"
+
+
 def non_string_keys(node, path="") -> list:
     """YAML 1.1 turns on/off/yes/no into booleans; report any key that is not text."""
     bad = []
@@ -150,7 +177,7 @@ def render(doc: str, spec: dict) -> str:
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    p.add_argument("--check", action="store_true", help="fail if docs/protocol.md is out of date")
+    p.add_argument("--check", action="store_true", help="fail if the generated files are out of date")
     args = p.parse_args()
 
     spec = yaml.safe_load(SPEC_PATH.read_text(encoding="utf-8"))
@@ -163,17 +190,24 @@ def main() -> None:
     if jsonschema is None:
         print("Note: jsonschema is not installed, so message examples were not validated.")
 
-    current = DOC_PATH.read_text(encoding="utf-8")
-    updated = render(current, spec)
-
-    if updated == current:
-        print("docs/protocol.md is up to date.")
-    elif args.check:
-        print("docs/protocol.md is out of date. Run: python3 tools/gen_protocol.py")
+    targets = [
+        (DOC_PATH, render(DOC_PATH.read_text(encoding="utf-8"), spec)),
+        (CODES_PATH, codes_module(spec)),
+    ]
+    stale = False
+    for path, updated in targets:
+        name = path.relative_to(ROOT)
+        current = path.read_text(encoding="utf-8") if path.exists() else None
+        if updated == current:
+            print(f"{name} is up to date.")
+        elif args.check:
+            print(f"{name} is out of date. Run: python3 tools/gen_protocol.py")
+            stale = True
+        else:
+            path.write_text(updated, encoding="utf-8")
+            print(f"Updated {name}.")
+    if stale:
         sys.exit(1)
-    else:
-        DOC_PATH.write_text(updated, encoding="utf-8")
-        print("Updated docs/protocol.md.")
 
 
 if __name__ == "__main__":

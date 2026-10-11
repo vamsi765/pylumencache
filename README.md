@@ -12,8 +12,8 @@ Unofficial Python library for [LumenCache](https://www.lumencache.com) ReNetA li
 |---|---|
 | `docs/asyncapi.yaml` | The protocol, as an AsyncAPI 3.0 description. The single source of truth for message codes and payloads |
 | `docs/protocol.md` | Prose notes and open questions. Its code tables are generated from the YAML |
-| `src/pylumencache/` | The library (skeleton; typed models will be generated from the YAML) |
-| `tools/gen_protocol.py` | Regenerates the tables in `protocol.md`; `--check` fails when stale |
+| `src/pylumencache/` | The library. `protocol/codes.py` (the `Code` enum of `e` values) is generated from the YAML; typed models will follow |
+| `tools/gen_protocol.py` | Regenerates the tables in `protocol.md` and `codes.py`; `--check` fails when either is stale |
 | `tools/lumencache_capture.py` | Records and sends MQTT traffic |
 
 ## Setup
