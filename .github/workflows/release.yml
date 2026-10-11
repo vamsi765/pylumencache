@@ -1,0 +1,30 @@
+name: Release
+
+# Publishes to PyPI when a tag such as v0.1.0 is pushed. Uses PyPI trusted
+# publishing, so no token is stored. One-time setup on pypi.org: add a pending
+# publisher for this repository, workflow "release.yml", environment "pypi".
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]" build
+      - run: python tools/gen_protocol.py --check
+      - run: pytest
+      - name: Tag matches the package version
+        run: |
+          version=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          test "v$version" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME does not match version $version"; exit 1; }
+      - run: python -m build
+      - uses: pypa/gh-action-pypi-publish@release/v1
