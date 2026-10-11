@@ -1,0 +1,19 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pylumencache"
+version = "0.0.1"
+description = "Unofficial Python client for LumenCache ReNetA lighting"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+dependencies = []
+
+[project.optional-dependencies]
+capture = ["paho-mqtt"]
+dev = ["pyyaml", "jsonschema", "paho-mqtt"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pylumencache"]
