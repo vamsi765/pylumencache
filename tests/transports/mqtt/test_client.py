@@ -5,8 +5,9 @@ from types import SimpleNamespace
 import aiomqtt
 import pytest
 
-from pylumencache.domain.commands import SetLight
-from pylumencache.domain.events import LightChanged
+from pylumencache.domain.commands import SetFixture
+from pylumencache.domain.events import FixtureChanged
+from pylumencache.domain.targets import Zone
 from pylumencache.transport import NotConnectedError
 from pylumencache.transports.mqtt import MqttTransport
 from pylumencache.transports.mqtt.wire import commands
@@ -200,11 +201,11 @@ def test_listeners_receive_domain_events_and_send_takes_domain_commands():
         await client.wait_connected(1)
         conn.put(f"{PREFIX}/status", b'{"e":56,"z":250,"on":1,"bri":40,"dev":12,"g":65534}')
         conn.put(f"{PREFIX}/cmd", b"")   # carries nothing for the model
-        await client.send(SetLight("zone", 250, brightness=50, fade=800))
+        await client.send(SetFixture(Zone(250), brightness=50, fade=800))
         while not events:
             await asyncio.sleep(0.01)
         await client.stop()
-        assert events == [LightChanged("zone", 250, True, 40, None, None, "event")]
+        assert events == [FixtureChanged(Zone(250), True, 40, None, None, "event")]
         assert conn.published == [(f"{PREFIX}/cmd", '{"e":56,"z":250,"bri":50,"fade":800}')]
     run(scenario)
 

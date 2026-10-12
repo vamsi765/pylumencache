@@ -3,7 +3,7 @@ import asyncio
 
 import pytest
 
-from pylumencache import LumenCache, NotConnectedError, SetLight, UnsupportedError
+from pylumencache import LumenCache, NotConnectedError, SetFixture, UnsupportedError, Zone
 from pylumencache.domain.events import DeviceSeen
 from pylumencache.transports.fallback import FallbackTransport
 
@@ -179,7 +179,7 @@ def test_commands_go_to_the_transport_in_use():
     async def scenario():
         a, b = Stub("a"), Stub("b")
         fallback = FallbackTransport([a, b], fail_after=0.02)
-        command = SetLight("zone", 250, 50)
+        command = SetFixture(Zone(250), 50)
         with pytest.raises(NotConnectedError):
             await fallback.send(command)
         await fallback.start()

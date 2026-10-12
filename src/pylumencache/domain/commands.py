@@ -3,18 +3,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .events import LightKind
+from .targets import Target
 
 
 @dataclass(frozen=True)
-class SetLight:
+class SetFixture:
     """Set a zone or a fixture. A brightness of 0 turns it off."""
 
-    kind: LightKind
-    key: int
+    target: Target
     brightness: float   # percent, 0 to 100
     color_temperature: int | None = None   # kelvin
     fade: int | None = None   # ms
 
 
-Command = SetLight
+Command = SetFixture

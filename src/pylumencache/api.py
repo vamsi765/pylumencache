@@ -4,7 +4,7 @@
     cache.model.add_listener(on_change)
     await cache.start()
     await cache.wait_connected()
-    await cache.send(SetLight("zone", 250, brightness=50))
+    await cache.send(SetFixture(Zone(250), brightness=50))
 
 The facade owns the SystemModel and keeps it fed from the transport. A caller never needs
 to know which transport is underneath.

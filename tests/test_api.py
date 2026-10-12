@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from pylumencache import LumenCache, NotConnectedError, SetLight, SystemModel, UnsupportedError
+from pylumencache import Fixture, LumenCache, NotConnectedError, SetFixture, SystemModel, UnsupportedError, Zone
 from pylumencache.transports.mqtt import MqttTransport
 from pylumencache.transports.mqtt.fake import FakeController
 
@@ -31,7 +31,7 @@ def test_the_model_is_built_and_kept_up_to_date():
         assert cache.connected
         while len(cache.model.devices) < 15:
             await asyncio.sleep(0.005)
-        await cache.send(SetLight("fixture", 14, brightness=30, color_temperature=3000))
+        await cache.send(SetFixture(Fixture(14), brightness=30, color_temperature=3000))
         while 14 not in cache.model.fixtures:
             await asyncio.sleep(0.005)
         await cache.stop()
@@ -53,7 +53,7 @@ def test_mqtt_builds_an_mqtt_transport():
 def test_sending_when_not_connected_is_refused():
     async def scenario():
         with pytest.raises(NotConnectedError):
-            await fake_cache().send(SetLight("zone", 1, brightness=0))
+            await fake_cache().send(SetFixture(Zone(1), brightness=0))
     run(scenario)
 
 

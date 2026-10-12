@@ -1,11 +1,11 @@
 """What is in the system and what state it is in, built from domain events.
 
-The system does not report the state of a light when asked, and it does not keep its
+The system does not report the state of a fixture when asked, and it does not keep its
 inventory on the broker (nothing is retained). So the model learns from what passes by:
 
 * devices come from announcements, which the system publishes once after it connects.
   Use to_dict()/from_dict() to keep them across restarts;
-* a zone or light changes state when a wall switch reports it or when any client,
+* a zone or fixture changes state when a wall switch reports it or when any client,
   including this one, sends a control command that the transport sees. Those states are
   the commands as sent. The system does not confirm that they happened;
 * signs of life show which devices are alive.
@@ -23,7 +23,8 @@ from enum import IntEnum
 from typing import Any, Protocol
 
 from ..listeners import Listeners
-from .events import DeviceAnnounced, DeviceSeen, Event, LightChanged
+from .events import DeviceAnnounced, DeviceSeen, Event, FixtureChanged
+from .targets import Target
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -64,7 +65,7 @@ class Device:
 
 
 @dataclass(frozen=True)
-class LightState:
+class FixtureState:
     """The last known state of a zone or fixture. None means not known."""
 
     on: bool | None = None
@@ -85,8 +86,8 @@ class Change:
 @dataclass
 class SystemModel:
     devices: dict[int, Device] = field(default_factory=dict)
-    zones: dict[int, LightState] = field(default_factory=dict)
-    fixtures: dict[int, LightState] = field(default_factory=dict)
+    zones: dict[int, FixtureState] = field(default_factory=dict)
+    fixtures: dict[int, FixtureState] = field(default_factory=dict)
     last_seen: dict[int, float] = field(default_factory=dict)   # GID -> time.monotonic() of the last sign of life
     _listeners: Listeners = field(default_factory=Listeners, repr=False)
 
@@ -94,6 +95,10 @@ class SystemModel:
 
     def children(self, gid: int) -> list[Device]:
         return [d for d in self.devices.values() if d.parent == gid]
+
+    def state(self, target: Target) -> FixtureState:
+        """The last known state of a zone or fixture; all fields None if nothing is known."""
+        return self._table(target).get(target.key, FixtureState())
 
     def seconds_since_seen(self, gid: int) -> float | None:
         seen = self.last_seen.get(gid)
@@ -114,9 +119,8 @@ class SystemModel:
             self._device(event)
         elif isinstance(event, DeviceSeen):
             self._seen(event)
-        elif isinstance(event, LightChanged):
-            table = self.zones if event.kind == "zone" else self.fixtures
-            self._set_state(table, event.kind, event.key, LightState(
+        elif isinstance(event, FixtureChanged):
+            self._set_state(event.target, FixtureState(
                 event.on, event.brightness, event.color_temperature, event.fade, event.source))
 
     def _notify(self, kind: str, key: int) -> None:
@@ -139,10 +143,14 @@ class SystemModel:
             self._notify("device", event.gid)
         self._notify("seen", event.gid)
 
-    def _set_state(self, table: dict[int, LightState], kind: str, key: int, new: LightState) -> None:
+    def _table(self, target: Target) -> dict[int, FixtureState]:
+        return {"zone": self.zones, "fixture": self.fixtures}[target.kind]
+
+    def _set_state(self, target: Target, new: FixtureState) -> None:
         """Merge `new` into the stored state: fields the message did not carry keep their value."""
-        old = table.get(key, LightState())
-        merged = LightState(
+        table = self._table(target)
+        old = table.get(target.key, FixtureState())
+        merged = FixtureState(
             on=old.on if new.on is None else new.on,
             brightness=old.brightness if new.brightness is None else new.brightness,
             color_temperature=old.color_temperature if new.color_temperature is None else new.color_temperature,
@@ -150,10 +158,10 @@ class SystemModel:
             source=new.source,
         )
         if merged.on and merged.brightness == 0:
-            merged = LightState(True, None, merged.color_temperature, merged.fade, merged.source)
+            merged = FixtureState(True, None, merged.color_temperature, merged.fade, merged.source)
         if merged != old:
-            table[key] = merged
-            self._notify(kind, key)
+            table[target.key] = merged
+            self._notify(target.kind, target.key)
 
     # --- keeping it across restarts ---------------------------------------
 
@@ -169,6 +177,6 @@ class SystemModel:
     def from_dict(cls, data: dict[str, Any]) -> SystemModel:
         model = cls()
         model.devices = {d["gid"]: Device(**d) for d in data.get("devices", [])}
-        model.zones = {int(k): LightState(**v) for k, v in data.get("zones", {}).items()}
-        model.fixtures = {int(k): LightState(**v) for k, v in data.get("fixtures", {}).items()}
+        model.zones = {int(k): FixtureState(**v) for k, v in data.get("zones", {}).items()}
+        model.fixtures = {int(k): FixtureState(**v) for k, v in data.get("fixtures", {}).items()}
         return model

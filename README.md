@@ -13,7 +13,7 @@ Unofficial Python library for [LumenCache](https://www.lumencache.com) ReNetA li
 | `docs/asyncapi.yaml` | The protocol, as an AsyncAPI 3.0 description. The single source of truth for message codes and payloads |
 | `docs/protocol.md` | Prose notes and open questions. Its code tables are generated from the YAML |
 | `src/pylumencache/api.py` | `LumenCache`: the public entry point. Owns a `SystemModel`, keeps it fed from a transport, and sends commands. Use `LumenCache.mqtt(...)` for the hosted broker |
-| `src/pylumencache/domain/` | What the library is about, with no wire format in it: `model.py` (`SystemModel`: devices, and the last known state of zones and lights; saves to and loads from JSON, because the system does not retain its inventory), `events.py` (`DeviceAnnounced`, `DeviceSeen`, `LightChanged`) and `commands.py` (`SetLight`) |
+| `src/pylumencache/domain/` | What the library is about, with no wire format in it: `model.py` (`SystemModel`: devices, and the last known state of zones and fixtures; saves to and loads from JSON, because the system does not retain its inventory), `events.py` (`DeviceAnnounced`, `DeviceSeen`, `FixtureChanged`), `targets.py` (`Zone`, `Fixture` and its subclasses `Light` and `TunableLight`), `classify.py` (which fixture class a device model gives) and `commands.py` (`SetFixture`) |
 | `src/pylumencache/transport.py` | The `Transport` interface: what a way of reaching a system must provide (start, stop, connection state, domain events in, domain commands out) |
 | `src/pylumencache/transports/mqtt/` | The MQTT transport. `client.py` (`MqttTransport`: TLS, reconnects, publishes to `cmd`), `adapter.py` (messages to domain events, domain commands to messages), `fake.py` (`FakeController`: a fake ReNetA system that replays a capture, for developing and testing without lights; pass `controller.factory` as `client_factory`) |
 | `src/pylumencache/transports/mqtt/wire/` | The MQTT wire format: `codes.py` (the `Code` enum), `commands.py` (one builder per documented command, such as `zone_control(zone_id=250, brightness=50)`) and `models.py` (a dataclass per received message), all generated from the YAML, and `parser.py` (`parse(topic, payload)` returns a typed message, or an `UnknownMessage` for anything unrecognised) |
@@ -65,21 +65,23 @@ The fallback code (`transports/fallback.py`) knows nothing about any particular 
 
 ```python
 import asyncio
-from pylumencache import LumenCache, SetLight
+from pylumencache import LumenCache, SetFixture, Zone
 
 async def main():
     cache = LumenCache.mqtt("<host>", "<Prefix Topic>", username="<user>", password="<pass>")
-    cache.model.add_listener(print)          # called with a Change when a device, zone or light changes
+    cache.model.add_listener(print)          # called with a Change when a device, zone or fixture changes
     await cache.start()                      # connects in the background and reconnects if it drops
     await cache.wait_connected(30)
-    await cache.send(SetLight("zone", 250, brightness=50, fade=800))
+    await cache.send(SetFixture(Zone(250), brightness=50, fade=800))
     await asyncio.sleep(60)
     await cache.stop()
 
 asyncio.run(main())
 ```
 
-Model listeners are plain functions; transport listeners can also be coroutines. One that raises does not affect the others. `cache.model` holds the devices and the last known state of each zone and light. `cache.send_raw(...)` sends any MQTT command as a fallback. For the raw typed messages, use `cache.transport.add_message_listener(...)` with `wire.commands` builders. `tools/console.py` does that from the command line.
+A command or a state change names its target: `Zone(250)` for a zone, `Fixture(14)` for one device. `Fixture` is the base class for everything that can be attached (lights now; fans, outlets and chargers when the system announces them). A subclass states what it can do, such as `TunableLight.color_temperature`, and `fixture_for(device)` picks the class from the announced model name. Add your own with `register_model(pattern, YourFixture)`. Targets are equal by kind and key, so `Light(14) == Fixture(14)`.
+
+Listeners are plain functions or coroutines. One that raises does not affect the others. `cache.model` holds the devices and the last known state of each zone and fixture. `cache.send_raw(...)` sends any MQTT command as a fallback. For the raw typed messages, use `cache.transport.add_message_listener(...)` with `wire.commands` builders. `tools/console.py` does that from the command line.
 
 ## Capturing the protocol
 

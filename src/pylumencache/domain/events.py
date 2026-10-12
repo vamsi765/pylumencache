@@ -4,7 +4,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-LightKind = Literal["zone", "fixture"]
+from .targets import Target
+
 Source = Literal["event", "command", "unknown"]
 
 
@@ -29,15 +30,14 @@ class DeviceSeen:
 
 
 @dataclass(frozen=True)
-class LightChanged:
+class FixtureChanged:
     """A zone or fixture changed state. None means the message did not say.
 
     `source` is "event" when the system reported it and "command" when it is a command as
     sent, which the system does not confirm.
     """
 
-    kind: LightKind
-    key: int
+    target: Target
     on: bool | None = None
     brightness: float | None = None   # percent, 0 to 100
     color_temperature: int | None = None   # kelvin
@@ -45,4 +45,4 @@ class LightChanged:
     source: Source = "unknown"
 
 
-Event = DeviceAnnounced | DeviceSeen | LightChanged
+Event = DeviceAnnounced | DeviceSeen | FixtureChanged

@@ -38,7 +38,7 @@ class MqttTransport(BaseTransport):
         transport.add_listener(on_event)     # called with each domain event
         await transport.start()
         await transport.wait_connected()
-        await transport.send(SetLight("zone", 250, brightness=50))
+        await transport.send(SetFixture(Zone(250), brightness=50))
         ...
         await transport.stop()
     """

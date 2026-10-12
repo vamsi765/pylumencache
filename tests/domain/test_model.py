@@ -4,8 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from pylumencache.domain.events import DeviceAnnounced, DeviceSeen, LightChanged
-from pylumencache.domain.model import Category, Change, Device, LightState, SystemModel
+from pylumencache.domain.events import DeviceAnnounced, DeviceSeen, FixtureChanged
+from pylumencache.domain.model import Category, Change, Device, FixtureState, SystemModel
+from pylumencache.domain.targets import Fixture, Zone
 
 FIXTURES = Path(__file__).parents[1] / "fixtures"
 
@@ -21,8 +22,8 @@ def announced(topic, payload):
         payload.get("cat"), payload.get("parent"))
 
 
-def command(key, kind="zone", **fields):
-    return LightChanged(kind, key, source="command", **fields)
+def command(key, target=Zone, **fields):
+    return FixtureChanged(target(key), source="command", **fields)
 
 
 @pytest.fixture
@@ -68,30 +69,30 @@ def test_a_device_outside_the_inventory_is_still_recorded_as_seen(model):
 
 def test_reported_zone_state_is_stored():
     m = SystemModel()
-    m.apply(LightChanged("zone", 250, True, 100, 5000, None, "event"))
-    assert m.zones[250] == LightState(True, 100, 5000, None, "event")
-    m.apply(LightChanged("zone", 250, False, source="event"))
-    assert m.zones[250] == LightState(False, 100, 5000, None, "event")   # last brightness is kept
+    m.apply(FixtureChanged(Zone(250), True, 100, 5000, None, "event"))
+    assert m.zones[250] == FixtureState(True, 100, 5000, None, "event")
+    m.apply(FixtureChanged(Zone(250), False, source="event"))
+    assert m.zones[250] == FixtureState(False, 100, 5000, None, "event")   # last brightness is kept
 
 
 def test_a_later_event_keeps_the_fields_it_did_not_carry():
     m = SystemModel()
     m.apply(command(250, on=True, brightness=50, color_temperature=4000, fade=800))
     m.apply(command(250, on=True, brightness=20))
-    assert m.zones[250] == LightState(True, 20, 4000, 800, "command")
+    assert m.zones[250] == FixtureState(True, 20, 4000, 800, "command")
 
 
 def test_on_without_brightness_forgets_a_zero_brightness():
     m = SystemModel()
     m.apply(command(250, on=False, brightness=0))
     assert m.zones[250].on is False
-    m.apply(LightChanged("zone", 250, on=True, source="event"))
+    m.apply(FixtureChanged(Zone(250), on=True, source="event"))
     assert m.zones[250].on is True and m.zones[250].brightness is None
 
 
 def test_zones_and_fixtures_are_kept_apart():
     m = SystemModel()
-    m.apply(command(14, "fixture", on=True, brightness=60, color_temperature=3000))
+    m.apply(command(14, Fixture, on=True, brightness=60, color_temperature=3000))
     m.apply(command(250, on=True, brightness=10))
     assert m.fixtures[14].brightness == 60 and 14 not in m.zones
     assert m.zones[250].brightness == 10
@@ -113,7 +114,7 @@ def test_listeners_hear_about_changes_and_can_fail_or_leave():
 
 def test_round_trip_through_json(model):
     model.apply(command(250, on=True, brightness=50, color_temperature=4000, fade=800))
-    model.apply(command(14, "fixture", on=True, brightness=5))
+    model.apply(command(14, Fixture, on=True, brightness=5))
     copy = SystemModel.from_dict(json.loads(json.dumps(model.to_dict())))
     assert copy.devices == model.devices
     assert copy.zones == model.zones and copy.fixtures == model.fixtures
@@ -129,3 +130,10 @@ def test_attaches_to_anything_with_add_listener():
     m.attach(source)
     source.callback(command(1, on=True, brightness=5))
     assert 1 in m.zones
+
+
+def test_the_model_reads_the_state_of_a_target():
+    m = SystemModel()
+    assert m.state(Fixture(14)) == FixtureState()
+    m.apply(command(14, Fixture, on=True, brightness=40))
+    assert m.state(Fixture(14)).brightness == 40 and m.state(Zone(14)) == FixtureState()

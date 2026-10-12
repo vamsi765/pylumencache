@@ -1,10 +1,12 @@
 """Between the MQTT wire format and the domain: parsed messages to events, commands to messages."""
 from __future__ import annotations
 
+from functools import singledispatch
 from typing import Any
 
 from ...domain.commands import Command
-from ...domain.events import DeviceAnnounced, DeviceSeen, Event, LightChanged
+from ...domain.events import DeviceAnnounced, DeviceSeen, Event, FixtureChanged
+from ...domain.targets import Fixture, Target, Zone
 from .wire import commands
 from .wire.codes import Code
 from .wire.models import ControllerHeartbeat, PdmHeartbeat, PowerPlaneHeartbeat, SwitchHeartbeat, ZoneEvent
@@ -19,8 +21,8 @@ def to_events(message: Message) -> list[Event]:
     if isinstance(message, (PowerPlaneHeartbeat, PdmHeartbeat, ControllerHeartbeat, SwitchHeartbeat)):
         return [DeviceSeen(message.g, getattr(message, "hsn", None))]
     if isinstance(message, ZoneEvent) and message.z is not None:
-        return [LightChanged(
-            "zone", message.z,
+        return [FixtureChanged(
+            Zone(message.z),
             on=bool(message.on) if message.on is not None else None,
             brightness=message.bri, color_temperature=message.cct, source="event")]
     if isinstance(message, CommandEcho):
@@ -42,18 +44,31 @@ def _from_command(cmd: dict[str, Any]) -> list[Event]:
     if all(value is None for value in fields.values()):
         return []   # nothing to learn from a command that sets nothing
     if cmd.get("z") is not None:
-        return [LightChanged("zone", cmd["z"], source="command", **fields)]
+        return [FixtureChanged(Zone(cmd["z"]), source="command", **fields)]
     if code == Code.DIRECT_CONTROL and cmd.get("g") is not None:
-        return [LightChanged("fixture", cmd["g"], source="command", **fields)]
+        return [FixtureChanged(Fixture(cmd["g"]), source="command", **fields)]
     return []
 
 
 def to_message(command: Command) -> dict[str, Any]:
     """The JSON object to publish on `cmd` for a domain command."""
-    if command.kind == "zone":
-        return commands.zone_control(
-            zone_id=command.key, brightness=command.brightness,
-            color_temperature=command.color_temperature, fade=command.fade)
+    return _control(command.target, command)
+
+
+@singledispatch
+def _control(target: Target, command: Command) -> dict[str, Any]:
+    raise TypeError(f"no MQTT command for {type(target).__name__}")
+
+
+@_control.register
+def _(target: Zone, command: Command) -> dict[str, Any]:
+    return commands.zone_control(
+        zone_id=target.key, brightness=command.brightness,
+        color_temperature=command.color_temperature, fade=command.fade)
+
+
+@_control.register
+def _(target: Fixture, command: Command) -> dict[str, Any]:
     return commands.direct_control(
-        gid=command.key, brightness=command.brightness,
+        gid=target.key, brightness=command.brightness,
         color_temperature=command.color_temperature, fade=command.fade)
