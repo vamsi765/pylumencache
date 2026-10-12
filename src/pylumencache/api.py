@@ -16,7 +16,7 @@ from typing import Any
 
 from .domain.commands import Command
 from .domain.model import SystemModel
-from .transport import Transport, UnsupportedError
+from .transport import RawCommandTransport, Transport, UnsupportedError
 from .transports.fallback import DEFAULT_FAIL_AFTER, FallbackTransport
 
 
@@ -67,7 +67,6 @@ class LumenCache:
 
     async def send_raw(self, message: dict[str, Any]) -> None:
         """Send a command in the transport's own format, as a fallback. Not every transport has one."""
-        send_raw = getattr(self.transport, "send_raw", None)
-        if send_raw is None:
+        if not isinstance(self.transport, RawCommandTransport):
             raise UnsupportedError("this transport has no raw commands")
-        await send_raw(message)
+        await self.transport.send_raw(message)

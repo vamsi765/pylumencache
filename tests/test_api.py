@@ -68,3 +68,15 @@ def test_raw_commands_need_a_transport_that_has_them():
         with pytest.raises(UnsupportedError):
             await LumenCache(Bare()).send_raw({"e": 8})
     run(scenario)
+
+
+def test_mqtt_and_fallback_declare_raw_commands_and_a_bare_transport_does_not():
+    from pylumencache import RawCommandTransport
+    from pylumencache.transports.fallback import FallbackTransport
+    from pylumencache.transports.mqtt import MqttTransport
+
+    async def scenario():
+        mqtt = MqttTransport("host", "prefix")
+        assert isinstance(mqtt, RawCommandTransport)
+        assert isinstance(FallbackTransport([mqtt]), RawCommandTransport)
+    run(scenario)

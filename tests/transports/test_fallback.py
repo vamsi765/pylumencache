@@ -8,15 +8,13 @@ from pylumencache.domain.events import DeviceSeen
 from pylumencache.transports.fallback import FallbackTransport
 
 
-class Stub:
-    """A transport that connects and drops when told to."""
+class PlainStub:
+    """A transport that connects and drops when told to. It has no raw commands."""
 
-    def __init__(self, name, raw=True):
+    def __init__(self, name):
         self.name, self.running, self.connected = name, False, False
         self.sent, self.starts, self.stops = [], 0, 0
         self._listeners, self._connection = [], []
-        if not raw:
-            self.send_raw = None
 
     def add_listener(self, callback):
         self._listeners.append(callback)
@@ -41,9 +39,6 @@ class Stub:
     async def send(self, command):
         self.sent.append(command)
 
-    async def send_raw(self, message):
-        self.sent.append(message)
-
     def set_connected(self, value):
         if value != self.connected:
             self.connected = value
@@ -53,6 +48,11 @@ class Stub:
     def emit(self, event):
         for callback in list(self._listeners):
             callback(event)
+
+
+class Stub(PlainStub):
+    async def send_raw(self, message):
+        self.sent.append(message)
 
 
 def run(coro_fn):
@@ -195,7 +195,7 @@ def test_commands_go_to_the_transport_in_use():
 
 def test_raw_commands_skip_transports_that_have_none():
     async def scenario():
-        a, b = Stub("a", raw=False), Stub("b")
+        a, b = PlainStub("a"), Stub("b")
         fallback = FallbackTransport([a, b])
         a.set_connected(True)
         b.set_connected(True)

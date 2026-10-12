@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 from abc import ABC, abstractmethod
 from collections.abc import Callable
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 
 from .domain.commands import Command
 from .domain.events import Event
@@ -47,6 +47,17 @@ class Transport(Protocol):
     async def send(self, command: Command) -> None:
         """Raises NotConnectedError when not connected."""
         ...
+
+
+@runtime_checkable
+class RawCommandTransport(Transport, Protocol):
+    """A transport that can also send a command in its own wire format, as a fallback.
+
+    Not every transport can: one that has no such format simply does not implement `send_raw`,
+    and callers find out with `isinstance(transport, RawCommandTransport)`.
+    """
+
+    async def send_raw(self, message: dict[str, Any]) -> None: ...
 
 
 class BaseTransport(ABC):

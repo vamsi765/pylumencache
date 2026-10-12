@@ -23,7 +23,7 @@ from typing import Any
 
 from ..domain.commands import Command
 from ..domain.events import Event
-from ..transport import BaseTransport, NotConnectedError, Transport, UnsupportedError
+from ..transport import BaseTransport, NotConnectedError, RawCommandTransport, Transport, UnsupportedError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -82,10 +82,9 @@ class FallbackTransport(BaseTransport):
     async def send_raw(self, message: dict[str, Any]) -> None:
         """Send a command in a transport's own format, to the first connected transport that has one."""
         async def call(transport: Transport) -> None:
-            send_raw = getattr(transport, "send_raw", None)
-            if send_raw is None:
+            if not isinstance(transport, RawCommandTransport):
                 raise UnsupportedError("this transport has no raw commands")
-            await send_raw(message)
+            await transport.send_raw(message)
 
         await self._send_with(call)
 
