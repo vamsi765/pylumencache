@@ -18,8 +18,8 @@ from typing import Any
 import aiomqtt
 
 from ...domain.commands import Command
-from ...domain.events import Event
-from ...transport import NotConnectedError
+from ...listeners import Listeners
+from ...transport import BaseTransport, NotConnectedError
 from .adapter import to_events, to_message
 from .wire.parser import Message, parse, relative_topic
 
@@ -29,7 +29,7 @@ DEFAULT_PORT = 8883
 RECONNECT_DELAYS = (1, 2, 5, 10, 30, 60)   # seconds; the last one repeats
 
 
-class MqttTransport:
+class MqttTransport(BaseTransport):
     """One MQTT connection to one ReNetA system. Implements pylumencache.transport.Transport.
 
     Typical use::
@@ -56,6 +56,7 @@ class MqttTransport:
         reconnect_delays: tuple[float, ...] = RECONNECT_DELAYS,
         client_factory: Callable[[], Any] | None = None,   # builds a connection like aiomqtt.Client; for tests
     ) -> None:
+        super().__init__()
         self._prefix = prefix.rstrip("/")
         self._host, self._port, self._username, self._password = host, port, username, password
         self._verify_tls = verify_tls
@@ -64,41 +65,21 @@ class MqttTransport:
         self._factory = client_factory or self._default_factory
         self._client: Any = None
         self._task: asyncio.Task[None] | None = None
-        self._connected = asyncio.Event()
-        self._listeners: list[Callable[[Event], Any]] = []
-        self._message_listeners: list[Callable[[Message], Any]] = []
-        self._raw_listeners: list[Callable[[str, bytes | str, bool], Any]] = []
-        self._connection_listeners: list[Callable[[bool], Any]] = []
-        self._pending: set[asyncio.Future[Any]] = set()   # async listeners still running
+        self._message_listeners = Listeners()
+        self._raw_listeners = Listeners()
 
     # --- public API -----------------------------------------------------
 
-    @property
-    def connected(self) -> bool:
-        return self._connected.is_set()
-
-    def add_listener(self, callback: Callable[[Event], Any]) -> Callable[[], None]:
-        """Call `callback(event)` for every domain event received. Returns a function that removes it."""
-        self._listeners.append(callback)
-        return lambda: self._listeners.remove(callback)
-
     def add_message_listener(self, callback: Callable[[Message], Any]) -> Callable[[], None]:
         """Call `callback(message)` for every received message, parsed but not interpreted (MQTT only)."""
-        self._message_listeners.append(callback)
-        return lambda: self._message_listeners.remove(callback)
-
-    def add_connection_listener(self, callback: Callable[[bool], Any]) -> Callable[[], None]:
-        """Call `callback(True)` when connected and `callback(False)` when the connection is lost."""
-        self._connection_listeners.append(callback)
-        return lambda: self._connection_listeners.remove(callback)
+        return self._message_listeners.add(callback)
 
     def add_raw_listener(self, callback: Callable[[str, bytes | str, bool], Any]) -> Callable[[], None]:
         """Call `callback(topic, payload, retained)` for every message under the prefix, before parsing.
 
         The topic is relative to the prefix. For recording traffic (MQTT only).
         """
-        self._raw_listeners.append(callback)
-        return lambda: self._raw_listeners.remove(callback)
+        return self._raw_listeners.add(callback)
 
     async def start(self) -> None:
         """Start connecting in the background. Returns at once; use wait_connected() to wait."""
@@ -111,9 +92,6 @@ class MqttTransport:
             self._task.cancel()
             await asyncio.gather(self._task, return_exceptions=True)
             self._task = None
-
-    async def wait_connected(self, timeout: float | None = None) -> None:
-        await asyncio.wait_for(self._connected.wait(), timeout)
 
     async def send(self, command: Command) -> None:
         """Publish a domain command to `<prefix>/cmd`."""
@@ -173,42 +151,15 @@ class MqttTransport:
             _LOGGER.info("Reconnecting to %s:%s in %s s", self._host, self._port, delay)
             await asyncio.sleep(delay)
 
-    def _set_connected(self, value: bool) -> None:
-        if value == self._connected.is_set():
-            return
-        self._connected.set() if value else self._connected.clear()
-        for callback in list(self._connection_listeners):
-            self._call(callback, value)
-
     def _dispatch(self, topic: str, payload: bytes | str, retained: bool = False) -> None:
         try:
             relative = relative_topic(self._prefix, topic)
         except ValueError:
             _LOGGER.debug("Ignoring a message outside the system's topics")
             return
-        for raw_callback in list(self._raw_listeners):
-            self._call(raw_callback, relative, payload, retained)
+        self._raw_listeners.call(relative, payload, retained)
         message = parse(relative, payload)
         _LOGGER.debug("Received %s on %s", type(message).__name__, relative)
-        for message_callback in list(self._message_listeners):
-            self._call(message_callback, message)
+        self._message_listeners.call(message)
         for event in to_events(message):
-            for callback in list(self._listeners):
-                self._call(callback, event)
-
-    def _call(self, callback: Callable[..., Any], *args: Any) -> None:
-        """Run a listener; one that fails must not stop the others or the connection."""
-        try:
-            result = callback(*args)
-        except Exception:
-            _LOGGER.exception("A listener raised an exception")
-            return
-        if asyncio.iscoroutine(result):
-            task = asyncio.ensure_future(result)
-            self._pending.add(task)
-            task.add_done_callback(self._async_listener_done)
-
-    def _async_listener_done(self, task: asyncio.Future[Any]) -> None:
-        self._pending.discard(task)
-        if not task.cancelled() and task.exception() is not None:
-            _LOGGER.error("An async listener raised an exception", exc_info=task.exception())
+            self._emit(event)

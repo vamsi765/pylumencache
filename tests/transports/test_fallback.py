@@ -247,3 +247,24 @@ def test_the_facade_builds_one_and_the_model_follows_the_active_transport():
         assert 7 in cache.model.last_seen and cache.connected
         await cache.stop()
     run(scenario)
+
+
+def test_coroutine_listeners_get_events_and_connection_changes():
+    async def scenario():
+        first = Stub("first")
+        cache = FallbackTransport([first])
+        events, states = [], []
+
+        async def on_event(event):
+            events.append(event)
+
+        async def on_connection(up):
+            states.append(up)
+
+        cache.add_listener(on_event)
+        cache.add_connection_listener(on_connection)
+        first.set_connected(True)
+        first.emit(DeviceSeen(1))
+        await asyncio.sleep(0)
+        assert events == [DeviceSeen(1)] and states == [True]
+    run(scenario)

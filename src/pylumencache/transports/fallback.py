@@ -23,17 +23,18 @@ from typing import Any
 
 from ..domain.commands import Command
 from ..domain.events import Event
-from ..transport import NotConnectedError, Transport, UnsupportedError
+from ..transport import BaseTransport, NotConnectedError, Transport, UnsupportedError
 
 _LOGGER = logging.getLogger(__name__)
 
 DEFAULT_FAIL_AFTER = 30.0   # seconds
 
 
-class FallbackTransport:
+class FallbackTransport(BaseTransport):
     """Implements pylumencache.transport.Transport on top of an ordered list of transports."""
 
     def __init__(self, transports: Sequence[Transport], *, fail_after: float = DEFAULT_FAIL_AFTER) -> None:
+        super().__init__()
         if not transports:
             raise ValueError("give at least one transport")
         self._transports = list(transports)
@@ -41,19 +42,12 @@ class FallbackTransport:
         self._started = 0   # how many, from the front of the list, are running
         self._active: int | None = None
         self._task: asyncio.Task[None] | None = None
-        self._connected = asyncio.Event()
         self._changed = asyncio.Event()
-        self._listeners: list[Callable[[Event], Any]] = []
-        self._connection_listeners: list[Callable[[bool], Any]] = []
         for index, transport in enumerate(self._transports):
             transport.add_listener(partial(self._forward, index))
             transport.add_connection_listener(partial(self._on_connection, index))
 
     # --- Transport ----------------------------------------------------------
-
-    @property
-    def connected(self) -> bool:
-        return self._connected.is_set()
 
     @property
     def transports(self) -> tuple[Transport, ...]:
@@ -65,15 +59,6 @@ class FallbackTransport:
         """The transport in use: the highest-priority one that is connected."""
         index = self._first_connected()
         return None if index is None else self._transports[index]
-
-    def add_listener(self, callback: Callable[[Event], Any]) -> Callable[[], None]:
-        self._listeners.append(callback)
-        return lambda: self._listeners.remove(callback)
-
-    def add_connection_listener(self, callback: Callable[[bool], Any]) -> Callable[[], None]:
-        """Called with True when some transport connects and False when none is connected."""
-        self._connection_listeners.append(callback)
-        return lambda: self._connection_listeners.remove(callback)
 
     async def start(self) -> None:
         if self._task is None:
@@ -90,9 +75,6 @@ class FallbackTransport:
             await transport.stop()
         self._started = 0
         self._update()
-
-    async def wait_connected(self, timeout: float | None = None) -> None:
-        await asyncio.wait_for(self._connected.wait(), timeout)
 
     async def send(self, command: Command) -> None:
         await self._send_with(lambda transport: transport.send(command))
@@ -132,8 +114,7 @@ class FallbackTransport:
     def _forward(self, index: int, event: Event) -> None:
         if index != self._first_connected():
             return   # only the transport in use speaks; a lower-priority one is on its way out
-        for callback in list(self._listeners):
-            self._call(callback, event)
+        self._emit(event)
 
     def _on_connection(self, index: int, connected: bool) -> None:
         self._update()
@@ -144,17 +125,7 @@ class FallbackTransport:
             _LOGGER.info("Using transport %s", "none" if active is None else type(self._transports[active]).__name__)
             self._active = active
         self._changed.set()
-        connected = active is not None
-        if connected != self._connected.is_set():
-            self._connected.set() if connected else self._connected.clear()
-            for callback in list(self._connection_listeners):
-                self._call(callback, connected)
-
-    def _call(self, callback: Callable[..., Any], *args: Any) -> None:
-        try:
-            callback(*args)
-        except Exception:
-            _LOGGER.exception("A listener raised an exception")
+        self._set_connected(active is not None)
 
     async def _supervise(self) -> None:
         """Start the next transport when all running ones stay down, stop the later ones when an earlier one is up."""

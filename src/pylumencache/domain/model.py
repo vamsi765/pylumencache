@@ -22,6 +22,7 @@ from dataclasses import asdict, dataclass, field
 from enum import IntEnum
 from typing import Any, Protocol
 
+from ..listeners import Listeners
 from .events import DeviceAnnounced, DeviceSeen, Event, LightChanged
 
 _LOGGER = logging.getLogger(__name__)
@@ -87,7 +88,7 @@ class SystemModel:
     zones: dict[int, LightState] = field(default_factory=dict)
     fixtures: dict[int, LightState] = field(default_factory=dict)
     last_seen: dict[int, float] = field(default_factory=dict)   # GID -> time.monotonic() of the last sign of life
-    _listeners: list[Callable[[Change], Any]] = field(default_factory=list, repr=False)
+    _listeners: Listeners = field(default_factory=Listeners, repr=False)
 
     # --- reading -----------------------------------------------------------
 
@@ -101,8 +102,7 @@ class SystemModel:
     # --- updating ----------------------------------------------------------
 
     def add_listener(self, callback: Callable[[Change], Any]) -> Callable[[], None]:
-        self._listeners.append(callback)
-        return lambda: self._listeners.remove(callback)
+        return self._listeners.add(callback)
 
     def attach(self, source: EventSource) -> Callable[[], None]:
         """Feed the model from anything with `add_listener(callback)`, such as a Transport."""
@@ -120,11 +120,7 @@ class SystemModel:
                 event.on, event.brightness, event.color_temperature, event.fade, event.source))
 
     def _notify(self, kind: str, key: int) -> None:
-        for callback in list(self._listeners):
-            try:
-                callback(Change(kind, key))
-            except Exception:   # a listener must not break the model
-                _LOGGER.exception("A model listener raised an exception")
+        self._listeners.call(Change(kind, key))
 
     def _device(self, event: DeviceAnnounced) -> None:
         known = self.devices.get(event.gid)
