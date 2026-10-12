@@ -16,15 +16,17 @@ def _check_range(name: str, value: float, low: float, high: float) -> None:
         raise ValueError(f"{name} must be between {low} and {high}, got {value}")
 
 
+def _message(code: Code, fields: dict[str, Any]) -> dict[str, Any]:
+    """The message for `code` with the fields that were given, in order."""
+    return {"e": code.value, **{wire: value for wire, value in fields.items() if value is not None}}
+
+
 def ping(*, gid: int | None = None) -> dict[str, Any]:
     """Ping (e:8).
 
     Wire keys: gid -> g.
     """
-    msg: dict[str, Any] = {"e": Code.PING.value}
-    if gid is not None:
-        msg["g"] = gid
-    return msg
+    return _message(Code.PING, {"g": gid})
 
 
 def hail(*, gid: int | None = None) -> dict[str, Any]:
@@ -32,10 +34,7 @@ def hail(*, gid: int | None = None) -> dict[str, Any]:
 
     Wire keys: gid -> g.
     """
-    msg: dict[str, Any] = {"e": Code.HAIL.value}
-    if gid is not None:
-        msg["g"] = gid
-    return msg
+    return _message(Code.HAIL, {"g": gid})
 
 
 def config(*, gid: int | None = None) -> dict[str, Any]:
@@ -43,10 +42,7 @@ def config(*, gid: int | None = None) -> dict[str, Any]:
 
     Wire keys: gid -> g.
     """
-    msg: dict[str, Any] = {"e": Code.CONFIG.value}
-    if gid is not None:
-        msg["g"] = gid
-    return msg
+    return _message(Code.CONFIG, {"g": gid})
 
 
 def heartbeat_request(*, gid: int | None = None) -> dict[str, Any]:
@@ -54,10 +50,7 @@ def heartbeat_request(*, gid: int | None = None) -> dict[str, Any]:
 
     Wire keys: gid -> g.
     """
-    msg: dict[str, Any] = {"e": Code.HEARTBEAT_REQUEST.value}
-    if gid is not None:
-        msg["g"] = gid
-    return msg
+    return _message(Code.HEARTBEAT_REQUEST, {"g": gid})
 
 
 def status_pull(*, gid: int | None = None) -> dict[str, Any]:
@@ -65,10 +58,7 @@ def status_pull(*, gid: int | None = None) -> dict[str, Any]:
 
     Wire keys: gid -> g.
     """
-    msg: dict[str, Any] = {"e": Code.STATUS_PULL.value}
-    if gid is not None:
-        msg["g"] = gid
-    return msg
+    return _message(Code.STATUS_PULL, {"g": gid})
 
 
 def reboot_or_reset(*, gid: int | None = None, sub_code: int | None = None, store: int | None = None) -> dict[str, Any]:
@@ -76,14 +66,7 @@ def reboot_or_reset(*, gid: int | None = None, sub_code: int | None = None, stor
 
     Wire keys: gid -> g, sub_code -> c, store -> store.
     """
-    msg: dict[str, Any] = {"e": Code.REBOOT_OR_RESET.value}
-    if gid is not None:
-        msg["g"] = gid
-    if sub_code is not None:
-        msg["c"] = sub_code
-    if store is not None:
-        msg["store"] = store
-    return msg
+    return _message(Code.REBOOT_OR_RESET, {"g": gid, "c": sub_code, "store": store})
 
 
 def card_mode(*, gid: int | None = None, card_mode: int | None = None) -> dict[str, Any]:
@@ -91,12 +74,7 @@ def card_mode(*, gid: int | None = None, card_mode: int | None = None) -> dict[s
 
     Wire keys: gid -> g, card_mode -> cm.
     """
-    msg: dict[str, Any] = {"e": Code.CARD_MODE.value}
-    if gid is not None:
-        msg["g"] = gid
-    if card_mode is not None:
-        msg["cm"] = card_mode
-    return msg
+    return _message(Code.CARD_MODE, {"g": gid, "cm": card_mode})
 
 
 def set_gid(*, gid: int | None = None, hsn: str | None = None, store: int | None = None) -> dict[str, Any]:
@@ -104,14 +82,7 @@ def set_gid(*, gid: int | None = None, hsn: str | None = None, store: int | None
 
     Wire keys: gid -> gid, hsn -> hsn, store -> store.
     """
-    msg: dict[str, Any] = {"e": Code.SET_GID.value}
-    if gid is not None:
-        msg["gid"] = gid
-    if hsn is not None:
-        msg["hsn"] = hsn
-    if store is not None:
-        msg["store"] = store
-    return msg
+    return _message(Code.SET_GID, {"gid": gid, "hsn": hsn, "store": store})
 
 
 def current_and_defaults(*, gid: int | None = None, drive_current: int | None = None, store: int | None = None) -> dict[str, Any]:
@@ -119,14 +90,7 @@ def current_and_defaults(*, gid: int | None = None, drive_current: int | None = 
 
     Wire keys: gid -> g, drive_current -> ma, store -> store.
     """
-    msg: dict[str, Any] = {"e": Code.CURRENT_AND_DEFAULTS.value}
-    if gid is not None:
-        msg["g"] = gid
-    if drive_current is not None:
-        msg["ma"] = drive_current
-    if store is not None:
-        msg["store"] = store
-    return msg
+    return _message(Code.CURRENT_AND_DEFAULTS, {"g": gid, "ma": drive_current, "store": store})
 
 
 def zone_management(*, gid: int | None = None, action: int | None = None, zone_id: int | None = None, brightness: float | None = None, color_temperature: int | None = None, store: int | None = None) -> dict[str, Any]:
@@ -136,20 +100,7 @@ def zone_management(*, gid: int | None = None, action: int | None = None, zone_i
     """
     if brightness is not None:
         _check_range("brightness", brightness, 0, 100)
-    msg: dict[str, Any] = {"e": Code.ZONE_MANAGEMENT.value}
-    if gid is not None:
-        msg["g"] = gid
-    if action is not None:
-        msg["a"] = action
-    if zone_id is not None:
-        msg["zid"] = zone_id
-    if brightness is not None:
-        msg["bri"] = brightness
-    if color_temperature is not None:
-        msg["cct"] = color_temperature
-    if store is not None:
-        msg["store"] = store
-    return msg
+    return _message(Code.ZONE_MANAGEMENT, {"g": gid, "a": action, "zid": zone_id, "bri": brightness, "cct": color_temperature, "store": store})
 
 
 def zone_control(*, zone_id: int | None = None, brightness: float | None = None, color_temperature: int | None = None, fade: int | None = None) -> dict[str, Any]:
@@ -159,16 +110,7 @@ def zone_control(*, zone_id: int | None = None, brightness: float | None = None,
     """
     if brightness is not None:
         _check_range("brightness", brightness, 0, 100)
-    msg: dict[str, Any] = {"e": Code.ZONE_CONTROL.value}
-    if zone_id is not None:
-        msg["z"] = zone_id
-    if brightness is not None:
-        msg["bri"] = brightness
-    if color_temperature is not None:
-        msg["cct"] = color_temperature
-    if fade is not None:
-        msg["fade"] = fade
-    return msg
+    return _message(Code.ZONE_CONTROL, {"z": zone_id, "bri": brightness, "cct": color_temperature, "fade": fade})
 
 
 def direct_control(*, gid: int | None = None, brightness: float | None = None, color_temperature: int | None = None, fade: int | None = None, zone_id: int | None = None) -> dict[str, Any]:
@@ -178,15 +120,4 @@ def direct_control(*, gid: int | None = None, brightness: float | None = None, c
     """
     if brightness is not None:
         _check_range("brightness", brightness, 0, 100)
-    msg: dict[str, Any] = {"e": Code.DIRECT_CONTROL.value}
-    if gid is not None:
-        msg["g"] = gid
-    if brightness is not None:
-        msg["bri"] = brightness
-    if color_temperature is not None:
-        msg["cct"] = color_temperature
-    if fade is not None:
-        msg["fade"] = fade
-    if zone_id is not None:
-        msg["z"] = zone_id
-    return msg
+    return _message(Code.DIRECT_CONTROL, {"g": gid, "bri": brightness, "cct": color_temperature, "fade": fade, "z": zone_id})

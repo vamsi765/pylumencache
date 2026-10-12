@@ -7,11 +7,24 @@ field raises TypeError, which the parser turns into an UnknownMessage.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, ClassVar, Self
+
+
+class WireMessage:
+    """What every received message has in common: how it is built from the JSON object."""
+
+    E: ClassVar[int | None]   # the value of `e`, when the message has one
+    WIRE: ClassVar[dict[str, str]]   # wire key -> field name
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Self:
+        values = {py: data[wire] for wire, py in cls.WIRE.items() if wire in data}
+        extra = {k: v for k, v in data.items() if k not in cls.WIRE and k != "e"}
+        return cls(**values, extra=extra)   # type: ignore[call-arg]
 
 
 @dataclass(frozen=True)
-class PowerPlaneHeartbeat:
+class PowerPlaneHeartbeat(WireMessage):
     """Received message with e:139."""
 
     g: int
@@ -25,15 +38,9 @@ class PowerPlaneHeartbeat:
     E = 139
     WIRE = {"g": "g", "hsn": "hsn", "swv": "swv", "hwv": "hwv", "time": "time", "heap": "heap"}
 
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> PowerPlaneHeartbeat:
-        values = {py: data[wire] for wire, py in cls.WIRE.items() if wire in data}
-        extra = {k: v for k, v in data.items() if k not in cls.WIRE and k != "e"}
-        return cls(**values, extra=extra)
-
 
 @dataclass(frozen=True)
-class PdmHeartbeat:
+class PdmHeartbeat(WireMessage):
     """Received message with e:139."""
 
     g: int
@@ -50,15 +57,9 @@ class PdmHeartbeat:
     E = 139
     WIRE = {"g": "g", "bay": "bay", "hsn": "hsn", "swv": "swv", "hwv": "hwv", "time": "time", "heap": "heap", "temp": "temp", "rh": "rh"}
 
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> PdmHeartbeat:
-        values = {py: data[wire] for wire, py in cls.WIRE.items() if wire in data}
-        extra = {k: v for k, v in data.items() if k not in cls.WIRE and k != "e"}
-        return cls(**values, extra=extra)
-
 
 @dataclass(frozen=True)
-class ControllerHeartbeat:
+class ControllerHeartbeat(WireMessage):
     """Received message with e:139."""
 
     g: int
@@ -75,15 +76,9 @@ class ControllerHeartbeat:
     E = 139
     WIRE = {"g": "g", "opc": "opc", "mode": "mode", "12v": "v12", "term": "term", "heap": "heap", "txrx": "txrx", "uptime": "uptime", "temp": "temp"}
 
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> ControllerHeartbeat:
-        values = {py: data[wire] for wire, py in cls.WIRE.items() if wire in data}
-        extra = {k: v for k, v in data.items() if k not in cls.WIRE and k != "e"}
-        return cls(**values, extra=extra)
-
 
 @dataclass(frozen=True)
-class SwitchHeartbeat:
+class SwitchHeartbeat(WireMessage):
     """Received message with e:139."""
 
     g: int
@@ -97,15 +92,9 @@ class SwitchHeartbeat:
     E = 139
     WIRE = {"g": "g", "uirgb": "uirgb", "term": "term", "heap": "heap", "txrx": "txrx", "uptime": "uptime"}
 
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> SwitchHeartbeat:
-        values = {py: data[wire] for wire, py in cls.WIRE.items() if wire in data}
-        extra = {k: v for k, v in data.items() if k not in cls.WIRE and k != "e"}
-        return cls(**values, extra=extra)
-
 
 @dataclass(frozen=True)
-class ZoneEvent:
+class ZoneEvent(WireMessage):
     """Received message with e:56."""
 
     z: int | None = None
@@ -119,15 +108,9 @@ class ZoneEvent:
     E = 56
     WIRE = {"z": "z", "on": "on", "bri": "bri", "cct": "cct", "dev": "dev", "g": "g"}
 
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> ZoneEvent:
-        values = {py: data[wire] for wire, py in cls.WIRE.items() if wire in data}
-        extra = {k: v for k, v in data.items() if k not in cls.WIRE and k != "e"}
-        return cls(**values, extra=extra)
-
 
 @dataclass(frozen=True)
-class ErrorReport:
+class ErrorReport(WireMessage):
     """Received message with e:254."""
 
     g: int | None = None
@@ -138,15 +121,9 @@ class ErrorReport:
     E = 254
     WIRE = {"g": "g", "err": "err", "v": "v"}
 
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> ErrorReport:
-        values = {py: data[wire] for wire, py in cls.WIRE.items() if wire in data}
-        extra = {k: v for k, v in data.items() if k not in cls.WIRE and k != "e"}
-        return cls(**values, extra=extra)
-
 
 @dataclass(frozen=True)
-class HailReply:
+class HailReply(WireMessage):
     """Received message with e:137."""
 
     g: int | None = None
@@ -160,15 +137,9 @@ class HailReply:
     E = 137
     WIRE = {"g": "g", "hsn": "hsn", "b": "b", "pc": "pc", "cat": "cat", "hwm": "hwm"}
 
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> HailReply:
-        values = {py: data[wire] for wire, py in cls.WIRE.items() if wire in data}
-        extra = {k: v for k, v in data.items() if k not in cls.WIRE and k != "e"}
-        return cls(**values, extra=extra)
-
 
 @dataclass(frozen=True)
-class DeviceAnnouncement:
+class DeviceAnnouncement(WireMessage):
     """Received message."""
 
     gid: int
@@ -182,15 +153,9 @@ class DeviceAnnouncement:
     E = None
     WIRE = {"gid": "gid", "hsn": "hsn", "name": "name", "cat": "cat", "parent": "parent", "time": "time"}
 
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> DeviceAnnouncement:
-        values = {py: data[wire] for wire, py in cls.WIRE.items() if wire in data}
-        extra = {k: v for k, v in data.items() if k not in cls.WIRE and k != "e"}
-        return cls(**values, extra=extra)
-
 
 @dataclass(frozen=True)
-class SwitchConfig:
+class SwitchConfig(WireMessage):
     """Received message with e:138."""
 
     g: int | None = None
@@ -211,9 +176,3 @@ class SwitchConfig:
 
     E = 138
     WIRE = {"g": "g", "b": "b", "cm": "cm", "pc": "pc", "hwm": "hwm", "swv": "swv", "hwv": "hwv", "hsn": "hsn", "cat": "cat", "pbmod": "pbmod", "pbmak": "pbmak", "pbb": "pbb", "pbmask": "pbmask", "rv": "rv"}
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> SwitchConfig:
-        values = {py: data[wire] for wire, py in cls.WIRE.items() if wire in data}
-        extra = {k: v for k, v in data.items() if k not in cls.WIRE and k != "e"}
-        return cls(**values, extra=extra)

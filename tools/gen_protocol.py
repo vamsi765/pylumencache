@@ -152,6 +152,11 @@ def commands_module(spec: dict) -> str:
         "def _check_range(name: str, value: float, low: float, high: float) -> None:",
         "    if not low <= value <= high:",
         '        raise ValueError(f"{name} must be between {low} and {high}, got {value}")',
+        "",
+        "",
+        "def _message(code: Code, fields: dict[str, Any]) -> dict[str, Any]:",
+        '    """The message for `code` with the fields that were given, in order."""',
+        '    return {"e": code.value, **{wire: value for wire, value in fields.items() if value is not None}}',
     ]
     for key, m in spec["components"]["messages"].items():
         if not m.get("x-documented"):
@@ -172,10 +177,8 @@ def commands_module(spec: dict) -> str:
             if "minimum" in sch:
                 out += [f"    if {py} is not None:",
                         f"        _check_range(\"{py}\", {py}, {sch['minimum']}, {sch['maximum']})"]
-        out.append(f"    msg: dict[str, Any] = {{\"e\": Code.{snake(key).upper()}.value}}")
-        for wire, py, _, _ in params:
-            out += [f"    if {py} is not None:", f"        msg[\"{wire}\"] = {py}"]
-        out.append("    return msg")
+        fields = ", ".join(f'"{wire}": {py}' for wire, py, _, _ in params)
+        out.append(f"    return _message(Code.{snake(key).upper()}, {{{fields}}})")
     return "\n".join(out) + "\n"
 
 
@@ -216,7 +219,20 @@ def models_module(spec: dict) -> str:
         "from __future__ import annotations",
         "",
         "from dataclasses import dataclass, field",
-        "from typing import Any",
+        "from typing import Any, ClassVar, Self",
+        "",
+        "",
+        "class WireMessage:",
+        '    """What every received message has in common: how it is built from the JSON object."""',
+        "",
+        "    E: ClassVar[int | None]   # the value of `e`, when the message has one",
+        "    WIRE: ClassVar[dict[str, str]]   # wire key -> field name",
+        "",
+        "    @classmethod",
+        "    def from_dict(cls, data: dict[str, Any]) -> Self:",
+        "        values = {py: data[wire] for wire, py in cls.WIRE.items() if wire in data}",
+        "        extra = {k: v for k, v in data.items() if k not in cls.WIRE and k != \"e\"}",
+        "        return cls(**values, extra=extra)   # type: ignore[call-arg]",
     ]
     schemas = spec["components"]["schemas"]
     for cls, sch in incoming_models(spec):
@@ -234,16 +250,13 @@ def models_module(spec: dict) -> str:
         fields.sort(key=lambda f: not f[3])   # required fields first
         code_ = sch["properties"].get("e", {}).get("const")
         with_code = f" with e:{code_}" if code_ is not None else ""
-        out += ["", "", "@dataclass(frozen=True)", f"class {cls}:", f'    """Received message{with_code}."""', ""]
+        out += ["", "", "@dataclass(frozen=True)", f"class {cls}(WireMessage):",
+                f'    """Received message{with_code}."""', ""]
         for py, _, typ, req in fields:
             out.append(f"    {py}: {typ}" if req else f"    {py}: {typ} | None = None")
         out.append("    extra: dict[str, Any] = field(default_factory=dict)")
         out += ["", f"    E = {code_}",
-                "    WIRE = {" + ", ".join(f'"{w}": "{py}"' for py, w, _, _ in fields) + "}",
-                "", "    @classmethod", "    def from_dict(cls, data: dict[str, Any]) -> "+cls+":",
-                "        values = {py: data[wire] for wire, py in cls.WIRE.items() if wire in data}",
-                "        extra = {k: v for k, v in data.items() if k not in cls.WIRE and k != \"e\"}",
-                "        return cls(**values, extra=extra)"]
+                "    WIRE = {" + ", ".join(f'"{w}": "{py}"' for py, w, _, _ in fields) + "}"]
     return "\n".join(out) + "\n"
 
 
